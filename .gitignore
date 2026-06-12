@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# PocketBase (binaire et données locales)
+pb/pocketbase
+pb/pocketbase.exe
+pb/pb_data
+pb/pb_public
+pb/pb.zip
