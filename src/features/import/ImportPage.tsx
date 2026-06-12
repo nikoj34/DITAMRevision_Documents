@@ -22,6 +22,7 @@ import type { ProjectContext } from '../layout/ProjectLayout';
 
 interface ImportReport {
   created: number;
+  createdNew?: number;
   skipped?: number;
   rejected: { line: number; reason: string }[];
 }
@@ -32,6 +33,8 @@ const RESP_TARGETS: { key: string; label: string }[] = [
   { key: 'numero', label: 'N° de remarque (R-0042) *' },
   { key: 'response', label: 'Réponse (MOE) *' },
   { key: 'response_kind', label: 'Sens de la réponse' },
+  { key: 'body', label: 'Observation (pour les lignes nouvelles)' },
+  { key: 'text_ref', label: 'Page / repère (pour les lignes nouvelles)' },
 ];
 
 function guessResponsesMapping(headers: string[]): Record<string, string> {
@@ -43,6 +46,8 @@ function guessResponsesMapping(headers: string[]): Record<string, string> {
     numero: find('n°', 'num', 'no '),
     response: headers.find((h) => norm(h) === 'reponse') || find('reponse moe', 'reponse'),
     response_kind: find('sens', 'suite donnee', 'avis'),
+    body: find('observation', 'remarque', 'commentaire'),
+    text_ref: find('page', 'repere', 'localisation'),
   };
 }
 
@@ -56,6 +61,7 @@ export default function ImportPage() {
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [targetVersion, setTargetVersion] = useState('');
   const [respondent, setRespondent] = useState('');
+  const [createNewRows, setCreateNewRows] = useState(true);
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<ImportReport | null>(null);
 
@@ -80,15 +86,18 @@ export default function ImportPage() {
   }
 
   // Aller-retour « fiche navette » : la MOE (sans accès à l'application)
-  // remplit les colonnes Réponse / Sens de la réponse dans l'export Excel ;
-  // on ré-importe ici, rapproché par le N° de remarque — rien n'est créé,
-  // les remarques existantes sont mises à jour et la réponse est tracée
-  // dans le fil au nom de l'intervenant MOE choisi.
+  // remplit les colonnes Réponse / Sens de la réponse dans l'export Excel,
+  // et peut AJOUTER des lignes (nouvelles remarques de sa part).
+  // Rapprochement par N° de remarque. IMPORTANT : cet import ne clôt jamais
+  // rien — une réponse passe la remarque en « répondue », la vérification
+  // de la correction (sur le nouvel indice) et la clôture restent côté
+  // relecteurs. Les lignes nouvelles deviennent des remarques « à traiter ».
   async function runResponsesImport() {
     if (!sheet) return;
     setBusy(true);
     const rejected: { line: number; reason: string }[] = [];
     let updated = 0;
+    let createdNew = 0;
     let skipped = 0;
     const author = respondent || me.id;
     const all = await pb.collection('remarks').getFullList<Remark>({ filter: `project = "${project.id}"` });
@@ -97,39 +106,64 @@ export default function ImportPage() {
     for (let i = 0; i < sheet.rows.length; i++) {
       const row = sheet.rows[i];
       const get = (key: string) => (mapping[key] ? String(row[mapping[key]] ?? '').trim() : '');
-      const num = parseRemarkNumber(get('numero') || get('external_ref'));
+      const rawNum = get('numero') || get('external_ref');
+      const num = parseRemarkNumber(rawNum);
+      const remark = num !== null ? byNumber.get(num) : undefined;
       const response = get('response');
-      if (!response) {
-        skipped++;
-        continue;
-      }
-      if (num === null) {
-        rejected.push({ line: i + 2, reason: 'N° de remarque illisible' });
-        continue;
-      }
-      const remark = byNumber.get(num);
-      if (!remark) {
-        rejected.push({ line: i + 2, reason: `Remarque ${fmtRemarkNum(num)} introuvable dans ce projet` });
-        continue;
-      }
+      const body = get('body');
+
       try {
-        await pb.collection('remark_replies').create({
-          remark: remark.id,
-          author,
-          kind: 'reponse',
-          body: `${response}\n\n(réponse MOE importée du fichier « ${fileName} »)`,
-        });
-        const patch: Record<string, unknown> = {};
-        const kind = normalizeResponseKind(get('response_kind'));
-        if (kind) patch.response_kind = kind;
-        if (remark.status === 'a_traiter' || remark.status === 'en_cours') patch.status = 'repondue';
-        if (Object.keys(patch).length) await pb.collection('remarks').update(remark.id, patch);
-        updated++;
+        if (remark) {
+          if (!response) {
+            skipped++;
+            continue;
+          }
+          await pb.collection('remark_replies').create({
+            remark: remark.id,
+            author,
+            kind: 'reponse',
+            body: `${response}\n\n(réponse MOE importée du fichier « ${fileName} »)`,
+          });
+          const patch: Record<string, unknown> = {};
+          const kind = normalizeResponseKind(get('response_kind'));
+          if (kind) patch.response_kind = kind;
+          // « Répondue » seulement — jamais « traitée » : la clôture reste
+          // une décision humaine des relecteurs, après vérification.
+          if (remark.status === 'a_traiter' || remark.status === 'en_cours') patch.status = 'repondue';
+          if (Object.keys(patch).length) await pb.collection('remarks').update(remark.id, patch);
+          updated++;
+        } else if (createNewRows && body) {
+          // Ligne ajoutée par la MOE : nouvelle remarque à son nom.
+          const number = await nextNumber('remarks', project.id);
+          await pb.collection('remarks').create({
+            project: project.id,
+            number,
+            external_ref: rawNum,
+            anchor_kind: 'reference_texte',
+            text_ref: get('text_ref'),
+            body,
+            type: 'observation',
+            criticity: 'normale',
+            status: 'a_traiter',
+            author,
+          });
+          createdNew++;
+        } else if (!response && !body) {
+          skipped++;
+        } else {
+          rejected.push({
+            line: i + 2,
+            reason:
+              num === null
+                ? 'N° de remarque illisible et pas de texte d’observation pour créer la ligne'
+                : `Remarque ${fmtRemarkNum(num)} introuvable dans ce projet`,
+          });
+        }
       } catch (e) {
         rejected.push({ line: i + 2, reason: e instanceof Error ? e.message : String(e) });
       }
     }
-    setReport({ created: updated, skipped, rejected });
+    setReport({ created: updated, createdNew, skipped, rejected });
     setBusy(false);
   }
 
@@ -287,16 +321,31 @@ export default function ImportPage() {
                 </select>
               </Field>
             ) : (
-              <Field label="Réponses enregistrées au nom de (l’intervenant MOE)">
-                <select value={respondent} onChange={(e) => setRespondent(e.target.value)}>
-                  <option value="">{me.display_name} (moi — saisie pour le compte de la MOE)</option>
-                  {people.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.display_name} — {ROLE_LABELS[p.role] || p.role}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+              <>
+                <Field label="Réponses enregistrées au nom de (l’intervenant MOE)">
+                  <select value={respondent} onChange={(e) => setRespondent(e.target.value)}>
+                    <option value="">{me.display_name} (moi — saisie pour le compte de la MOE)</option>
+                    {people.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.display_name} — {ROLE_LABELS[p.role] || p.role}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <label className="small" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={createNewRows}
+                    onChange={(e) => setCreateNewRows(e.target.checked)}
+                  />
+                  Créer les lignes ajoutées par la MOE (sans n° connu) comme nouvelles remarques « à traiter »
+                </label>
+                <div className="alert info" style={{ marginTop: 10 }}>
+                  ℹ️ Cet import ne clôt <b>jamais</b> de remarque : une réponse passe la remarque en
+                  « répondue », pas en « traitée ». La vérification de la correction (sur le nouvel indice du
+                  document) et la clôture restent à la main des relecteurs CIRAD — répondre n’est pas corriger.
+                </div>
+              </>
             )}
             <div className="form-actions">
               <button
@@ -316,7 +365,15 @@ export default function ImportPage() {
           {report && (
             <div className={`alert ${report.rejected.length ? 'warn' : 'info'}`}>
               ✅ {report.created} {mode === 'reponses' ? 'réponse(s) intégrée(s) au fil des remarques' : 'remarque(s) créée(s)'}.
+              {report.createdNew ? ` ➕ ${report.createdNew} nouvelle(s) remarque(s) créée(s) à partir des lignes ajoutées par la MOE.` : ''}
               {report.skipped ? ` ${report.skipped} ligne(s) sans réponse ignorée(s).` : ''}
+              {mode === 'reponses' && (
+                <>
+                  {' '}
+                  <b>Aucune remarque n’a été close</b> : les remarques répondues sont à vérifier puis à clore (ou
+                  contester) par leurs émetteurs.
+                </>
+              )}
               {report.rejected.length > 0 && (
                 <>
                   <br />⚠ {report.rejected.length} ligne(s) rejetée(s) :
