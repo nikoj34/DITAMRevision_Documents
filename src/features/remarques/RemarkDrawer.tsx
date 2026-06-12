@@ -5,7 +5,7 @@ import { useSession } from '../../state/session';
 import { Avatar, Badge, Drawer, Field } from '../../components/ui';
 import { changeRemarkStatus } from './remarkApi';
 import { nextNumber } from '../../lib/hooks';
-import type { Doc, DocVersion, Remark, RemarkReply, RemarkStatus, ResponseKind, Tag } from '../../lib/types';
+import type { Doc, DocVersion, Remark, RemarkReply, RemarkStatus, Requirement, ResponseKind, Tag } from '../../lib/types';
 import {
   CRITICITY_COLORS,
   CRITICITY_LABELS,
@@ -50,6 +50,12 @@ export default function RemarkDrawer({
     { filter: `project = "${remark.project}" && kind != "lot"`, sort: 'label' },
     [remark.project]
   );
+  const { items: allRequirements } = useList<Requirement>(
+    'requirements',
+    { filter: `project = "${remark.project}"`, sort: 'code,label' },
+    [remark.project]
+  );
+  const [reqQuery, setReqQuery] = useState('');
   const [replyText, setReplyText] = useState('');
   const [replyKind, setReplyKind] = useState<ResponseKind | ''>('');
   const [busy, setBusy] = useState(false);
@@ -98,6 +104,14 @@ export default function RemarkDrawer({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function linkRequirement(reqId: string, on: boolean) {
+    const cur = remark.requirements || [];
+    const next = on ? [...cur, reqId] : cur.filter((r) => r !== reqId);
+    await pb.collection('remarks').update(remark.id, { requirements: next });
+    setReqQuery('');
+    onChanged();
   }
 
   async function toggleSujet(id: string) {
@@ -236,6 +250,51 @@ export default function RemarkDrawer({
               </button>
             ))}
           </div>
+        </>
+      )}
+
+      {allRequirements.length > 0 && (
+        <>
+          <h4 className="small" style={{ textTransform: 'uppercase', color: 'var(--gris-500)' }}>
+            Exigences liées (programme, DSST…)
+          </h4>
+          <div className="status-buttons">
+            {allRequirements
+              .filter((q) => (remark.requirements || []).includes(q.id))
+              .map((q) => (
+                <button
+                  key={q.id}
+                  className="status-pill current"
+                  style={{ '--sp-color': '#1c4d77' } as React.CSSProperties}
+                  title="Cliquer pour délier"
+                  onClick={() => linkRequirement(q.id, false)}
+                >
+                  {q.code || q.label.slice(0, 40)} ✕
+                </button>
+              ))}
+          </div>
+          <Field label="Lier une exigence (tapez un code ou un mot du libellé)">
+            <input
+              list={`req-list-${remark.id}`}
+              value={reqQuery}
+              onChange={(e) => {
+                const val = e.target.value;
+                const match = allRequirements.find(
+                  (q) => `${q.code ? q.code + ' — ' : ''}${q.label}` === val
+                );
+                if (match) linkRequirement(match.id, true);
+                else setReqQuery(val);
+              }}
+              placeholder="EXG-2.014… ou « surpression »"
+            />
+            <datalist id={`req-list-${remark.id}`}>
+              {allRequirements
+                .filter((q) => !(remark.requirements || []).includes(q.id))
+                .map((q) => (
+                  <option key={q.id} value={`${q.code ? q.code + ' — ' : ''}${q.label}`} />
+                ))}
+            </datalist>
+          </Field>
         </>
       )}
 

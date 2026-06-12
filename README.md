@@ -32,6 +32,13 @@ exploitants, secrétaire de séance) — voir [`docs/ATELIER.md`](docs/ATELIER.m
 - **Tableau de bord** : remarques ouvertes, bloquantes non levées, échéances
   dépassées, alerte sur les décisions actées non re-vérifiées sur la phase
   en cours.
+- **Suivi par sujet** : étiquetez remarques et décisions par local, ouvrage
+  ou thème (« Escalier aile B »…) et consultez leur histoire complète à
+  travers les phases, même quand les documents sont reformulés.
+- **Référentiel d'exigences** (programme, DSST santé & sécurité au travail,
+  réglementation, sûreté…) : chaque exigence est vérifiée phase après phase
+  (conforme / non conforme / écart accepté / non vérifiable), avec taux de
+  conformité, remarques rattachées, import/export Excel du référentiel.
 - **Export Excel** conforme au tableau d'observations type des marchés
   publics (+ feuille registre des décisions), livrable tel quel en annexe de
   compte rendu. **Import Excel** tolérant avec assistant de correspondance
@@ -138,6 +145,6 @@ docs/ATELIER.md      Synthèse de l'atelier de conception
 
 Campagnes de relecture avec relances, avis formels du contrôleur technique
 avec levée réservée à l'émetteur, multi-ancrage d'une remarque sur plusieurs
-documents, liens entre remarques (« dépend de », « même sujet »), référentiel
-d'exigences du programme et balance des surfaces, comparaison côte à côte de
-deux indices, mode séance, notifications mail, PIN par profil.
+documents, liens entre remarques (« dépend de », « même sujet »), balance des
+surfaces par local, comparaison côte à côte de deux indices, mode séance,
+notifications mail, PIN par profil.

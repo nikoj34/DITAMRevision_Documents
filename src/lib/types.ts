@@ -116,6 +116,7 @@ export interface Remark extends BaseRecord {
   closed_at: string;
   closed_by: string;
   carried_from: string;
+  requirements: string[];
   expand?: {
     author?: Stakeholder;
     assigned_to?: Stakeholder;
@@ -135,9 +136,7 @@ export interface RemarkReply extends BaseRecord {
   expand?: { author?: Stakeholder };
 }
 
-export type DecisionStatus = 'a_arbitrer' | 'actee' | 'modifiee' | 'reportee' | 'abandonnee';
-
-export interface DecisionVerification {
+export type DecisionStatus = 'a_arbitrer' | 'actee' | 'modifiee' | 'reportee' | 'abandonnee';export interface DecisionVerification {
   phase: string;
   phase_label: string;
   result: 'conforme' | 'non_conforme' | 'non_verifiable';
@@ -323,3 +322,90 @@ export function isOverdue(r: Remark): boolean {
 
 /** Statuts considérés comme "vivants" (à reporter sur un nouvel indice). */
 export const OPEN_STATUSES: RemarkStatus[] = ['a_traiter', 'en_cours', 'repondue', 'a_reverifier'];
+
+// ───────────────────── Exigences du programme ─────────────────────
+
+export type RequirementStatus = 'active' | 'amendee' | 'abandonnee';
+
+export type RequirementVerifResult = 'conforme' | 'non_conforme' | 'ecart_accepte' | 'non_verifiable';
+
+export interface RequirementVerification {
+  phase: string;
+  phase_label: string;
+  result: RequirementVerifResult;
+  by: string;
+  by_name: string;
+  date: string;
+  note: string;
+}
+
+export type RequirementOrigin =
+  | 'PROGRAMME' | 'DSST' | 'REGLEMENTATION' | 'SURETE' | 'ENVIRONNEMENT' | 'EXPLOITATION' | 'AUTRE';
+
+export const REQUIREMENT_ORIGIN_LABELS: Record<RequirementOrigin, string> = {
+  PROGRAMME: 'Programme',
+  DSST: 'DSST — Santé & sécurité au travail',
+  REGLEMENTATION: 'Réglementation',
+  SURETE: 'Sûreté',
+  ENVIRONNEMENT: 'Environnement',
+  EXPLOITATION: 'Exploitation-maintenance',
+  AUTRE: 'Autre',
+};
+
+export const REQUIREMENT_ORIGIN_COLORS: Record<RequirementOrigin, string> = {
+  PROGRAMME: '#1c4d77',
+  DSST: '#c0392b',
+  REGLEMENTATION: '#8a5fc0',
+  SURETE: '#3e4750',
+  ENVIRONNEMENT: '#2f8a4c',
+  EXPLOITATION: '#0e7d7d',
+  AUTRE: '#6b7681',
+};
+
+export interface Requirement extends BaseRecord {
+  project: string;
+  code: string;
+  label: string;
+  description: string;
+  target_value: string;
+  origin: RequirementOrigin | '';
+  source_ref: string;
+  themes: string[];
+  status: RequirementStatus;
+  status_note: string;
+  verifications: RequirementVerification[] | null;
+  expand?: { themes?: Tag[] };
+}
+
+export const REQUIREMENT_STATUS_LABELS: Record<RequirementStatus, string> = {
+  active: 'Active',
+  amendee: 'Amendée',
+  abandonnee: 'Abandonnée',
+};
+
+export const REQUIREMENT_STATUS_COLORS: Record<RequirementStatus, string> = {
+  active: '#2f8a4c',
+  amendee: '#2e7cb5',
+  abandonnee: '#6b7681',
+};
+
+export const REQ_VERIF_LABELS: Record<RequirementVerifResult, string> = {
+  conforme: 'Conforme',
+  non_conforme: 'Non conforme',
+  ecart_accepte: 'Écart accepté',
+  non_verifiable: 'Non vérifiable à ce stade',
+};
+
+export const REQ_VERIF_COLORS: Record<RequirementVerifResult, string> = {
+  conforme: '#2f8a4c',
+  non_conforme: '#c0392b',
+  ecart_accepte: '#d97706',
+  non_verifiable: '#8a5fc0',
+};
+
+export const REQ_VERIF_ICONS: Record<RequirementVerifResult, string> = {
+  conforme: '✅',
+  non_conforme: '❌',
+  ecart_accepte: '⚖️',
+  non_verifiable: '⏳',
+};

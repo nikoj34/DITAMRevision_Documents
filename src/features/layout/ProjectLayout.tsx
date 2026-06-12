@@ -69,6 +69,7 @@ export default function ProjectLayout() {
           <NavLink to={`/projet/${project.id}/remarques`}>💬 Remarques</NavLink>
           <NavLink to={`/projet/${project.id}/decisions`}>⚖️ Décisions</NavLink>
           <NavLink to={`/projet/${project.id}/sujets`}>🧵 Suivi par sujet</NavLink>
+          <NavLink to={`/projet/${project.id}/exigences`}>📐 Exigences</NavLink>
           <NavLink to={`/projet/${project.id}/import`}>📥 Import Excel</NavLink>
           <NavLink to={`/projet/${project.id}/parametres`}>⚙️ Paramètres</NavLink>
         </nav>
