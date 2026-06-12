@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext } from 'react-router-dom';
 import { useList } from '../../lib/hooks';
 import { Badge, EmptyState } from '../../components/ui';
 import RemarkDrawer from '../remarques/RemarkDrawer';
@@ -23,6 +23,7 @@ import type { ProjectContext } from '../layout/ProjectLayout';
  */
 export default function SubjectsPage() {
   const { project, phases } = useOutletContext<ProjectContext>();
+  const navigate = useNavigate();
 
   const { items: sujets } = useList<Tag>(
     'tags',
@@ -81,8 +82,12 @@ export default function SubjectsPage() {
   return (
     <div className="main">
       <div className="page-head">
-        <h2>Suivi par sujet</h2>
+        <h2>Remarques</h2>
         <span className="muted small">l’histoire d’un local, d’un ouvrage ou d’un thème à travers les phases</span>
+        <div className="view-toggle">
+          <button onClick={() => navigate(`/projet/${project.id}/remarques`)}>Liste</button>
+          <button className="active">Par sujet</button>
+        </div>
       </div>
       <p className="small muted" style={{ maxWidth: 760 }}>
         D’une phase à l’autre, les documents changent d’ordre, de termes et de niveau de détail. Le sujet, lui, ne

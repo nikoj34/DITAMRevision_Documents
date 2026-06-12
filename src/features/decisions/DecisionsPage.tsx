@@ -4,6 +4,7 @@ import { pb } from '../../lib/pb';
 import { nextNumber, useList } from '../../lib/hooks';
 import { useSession } from '../../state/session';
 import { Badge, Drawer, EmptyState, Field, Modal } from '../../components/ui';
+import { exportDecisions } from '../../lib/excel';
 import type { Decision, DecisionStatus, DecisionVerification, Phase, Tag } from '../../lib/types';
 import {
   DECISION_STATUS_COLORS,
@@ -54,6 +55,9 @@ export default function DecisionsPage() {
         <h2>Registre des décisions</h2>
         <span className="muted small">mémoire de l’opération, toutes phases confondues</span>
         <div className="spacer" />
+        <button className="btn secondary" onClick={() => exportDecisions(filtered, project.name)} disabled={!filtered.length}>
+          ⬇ Exporter Excel
+        </button>
         <button className="btn" onClick={() => setCreating(true)}>
           + Nouvelle décision
         </button>

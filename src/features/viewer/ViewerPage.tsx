@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 import { pb } from '../../lib/pb';
 import { useList } from '../../lib/hooks';
 import { useSession } from '../../state/session';
 import { Badge, EmptyState, Field, Modal } from '../../components/ui';
+import { LegendeStatuts } from '../../components/aides';
 import { loadPdf, type PdfDocument } from '../../lib/pdf';
 import { createRemark } from '../remarques/remarkApi';
 import RemarkDrawer from '../remarques/RemarkDrawer';
@@ -21,6 +23,8 @@ interface PendingAnchor {
   kind: 'epingle_pdf' | 'zone_pdf' | 'reference_texte';
   page: number;
   rect: AnchorRect | null;
+  /** Référence pré-remplie (ex. cellule Excel cliquée). */
+  textRef?: string;
 }
 
 export default function ViewerPage() {
@@ -59,6 +63,7 @@ export default function ViewerPage() {
   const sujets = allTags.filter((t) => t.kind !== 'lot');
 
   const [pdf, setPdf] = useState<PdfDocument | null>(null);
+  const [toast, setToast] = useState('');
   const [page, setPage] = useState(1);
   const [scale, setScale] = useState(1.2);
   const [annotating, setAnnotating] = useState(false);
@@ -82,6 +87,7 @@ export default function ViewerPage() {
     () => (version?.file ? pb.files.getURL(version, version.file) : ''),
     [version]
   );
+  const isExcel = !!version?.file && /\.(xlsx|xls|ods|csv)$/i.test(version.file);
 
   // Chargement du PDF quand la version change. L'état est réinitialisé dans
   // le même effet (changement de source externe), d'où la désactivation
@@ -218,16 +224,28 @@ export default function ViewerPage() {
           </a>
         )}
         {version?.is_pdf ? (
-          <button className={`btn small ${annotating ? '' : 'secondary'}`} onClick={() => setAnnotating((a) => !a)}>
-            ✏ {annotating ? 'Cliquez ou tracez une zone sur la page…' : 'Mode remarque'}
-          </button>
+          annotating ? (
+            <span className="annotate-hint">👉 Cliquez sur le plan (épingle) ou tracez un rectangle (zone)</span>
+          ) : (
+            <button className="btn" onClick={() => setAnnotating(true)}>
+              + Ajouter une remarque
+            </button>
+          )
+        ) : isExcel ? (
+          annotating ? (
+            <span className="annotate-hint">👉 Cliquez sur la cellule concernée dans le tableau</span>
+          ) : (
+            <button className="btn" onClick={() => setAnnotating(true)} disabled={!version}>
+              + Ajouter une remarque
+            </button>
+          )
         ) : (
           <button
-            className="btn small"
+            className="btn"
             onClick={() => setPending({ kind: 'reference_texte', page: 0, rect: null })}
             disabled={!version}
           >
-            ✏ Nouvelle remarque
+            + Ajouter une remarque
           </button>
         )}
       </div>
@@ -237,11 +255,22 @@ export default function ViewerPage() {
           {!version && (
             <EmptyState icon="📄" text="Aucun fichier déposé pour ce document." hint="Utilisez « Nouvel indice » depuis la liste des documents." />
           )}
-          {version && !version.is_pdf && (
+          {version && !version.is_pdf && isExcel && (
+            <ExcelViewer
+              url={fileUrl}
+              annotating={annotating}
+              remarks={remarks}
+              onPick={(ref) => {
+                setPending({ kind: 'reference_texte', page: 0, rect: null, textRef: ref });
+                setAnnotating(false);
+              }}
+            />
+          )}
+          {version && !version.is_pdf && !isExcel && (
             <EmptyState
               icon="📎"
               text={`Fichier ${version.file?.split('.').pop()?.toUpperCase() || ''} — pas d’affichage intégré.`}
-              hint="Téléchargez l’original avec le bouton ci-dessus, puis créez des remarques en citant l’onglet/cellule ou le chapitre concerné (référence textuelle)."
+              hint="Téléchargez l’original avec le bouton ci-dessus, puis créez des remarques en citant le chapitre ou l’article concerné (référence textuelle)."
             />
           )}
           {version?.is_pdf && pdfError && <div className="alert error">Impossible d’afficher le PDF : {pdfError}</div>}
@@ -306,13 +335,13 @@ export default function ViewerPage() {
         </div>
 
         <aside className="viewer-panel">
-          <h4 style={{ marginTop: 2 }}>
-            Remarques sur cet indice <span className="muted">({remarks.length})</span>
+          <h4 style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Remarques sur cet indice <span className="muted">({remarks.length})</span> <LegendeStatuts />
           </h4>
           {remarks.length === 0 && (
             <p className="small muted">
-              Aucune remarque. Activez le « Mode remarque » puis cliquez sur le plan (épingle) ou tracez un rectangle
-              (zone).
+              Aucune remarque sur cet indice. Cliquez sur «&nbsp;+ Ajouter une remarque&nbsp;» puis{' '}
+              {isExcel ? 'sur la cellule concernée du tableau' : 'sur le plan (épingle) ou tracez un rectangle (zone)'}.
             </p>
           )}
           {remarks.map((r) => (
@@ -347,7 +376,7 @@ export default function ViewerPage() {
           sujets={sujets}
           onClose={() => setPending(null)}
           onSave={async (data) => {
-            await createRemark(
+            const created = await createRemark(
               {
                 project: project.id,
                 document_version: version.id,
@@ -360,6 +389,8 @@ export default function ViewerPage() {
             );
             setPending(null);
             reloadRemarks();
+            setToast(`✓ Remarque ${fmtRemarkNum(created.number)} enregistrée`);
+            setTimeout(() => setToast(''), 4000);
           }}
         />
       )}
@@ -371,6 +402,118 @@ export default function ViewerPage() {
           onChanged={reloadRemarks}
         />
       )}
+
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+/**
+ * Visionneuse Excel en lecture seule : le classeur est affiché onglet par
+ * onglet ; en mode annotation, un clic sur une cellule pré-remplit la
+ * référence normalisée « Onglet!B12 — libellé de la ligne ». Le fichier
+ * original n'est jamais modifié.
+ */
+function ExcelViewer({
+  url,
+  annotating,
+  remarks,
+  onPick,
+}: {
+  url: string;
+  annotating: boolean;
+  remarks: Remark[];
+  onPick: (ref: string) => void;
+}) {
+  const [wb, setWb] = useState<XLSX.WorkBook | null>(null);
+  const [sheet, setSheet] = useState('');
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(url)
+      .then((r) => r.arrayBuffer())
+      .then((buf) => {
+        if (cancelled) return;
+        const w = XLSX.read(buf);
+        setWb(w);
+        setSheet(w.SheetNames[0] || '');
+      })
+      .catch((e) => !cancelled && setErr(e instanceof Error ? e.message : String(e)));
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  const grid = useMemo(() => {
+    if (!wb || !sheet || !wb.Sheets[sheet]) return null;
+    const aoa = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheet], { header: 1, defval: '' }) as unknown[][];
+    return aoa.slice(0, 500);
+  }, [wb, sheet]);
+
+  const remarkedRefs = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of remarks) {
+      const m = (r.text_ref || '').match(/^(.+!\w+\d+)/);
+      if (m) set.add(m[1]);
+    }
+    return set;
+  }, [remarks]);
+
+  if (err) return <div className="alert error">Impossible de lire le classeur : {err}</div>;
+  if (!wb || !grid) return <div className="muted" style={{ padding: 30 }}>Chargement du classeur…</div>;
+
+  const colCount = Math.min(30, Math.max(1, ...grid.map((row) => row.length)));
+
+  return (
+    <div className="excel-viewer">
+      <div className="excel-tabs">
+        {wb.SheetNames.map((name) => (
+          <button key={name} className={name === sheet ? 'active' : ''} onClick={() => setSheet(name)}>
+            {name}
+          </button>
+        ))}
+        <span className="small muted" style={{ marginLeft: 'auto' }}>
+          lecture seule — l’original n’est jamais modifié
+        </span>
+      </div>
+      <table className="excel-grid">
+        <thead>
+          <tr>
+            <th></th>
+            {Array.from({ length: colCount }, (_, c) => (
+              <th key={c}>{XLSX.utils.encode_col(c)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {grid.map((row, ri) => (
+            <tr key={ri}>
+              <th>{ri + 1}</th>
+              {Array.from({ length: colCount }, (_, ci) => {
+                const addr = `${sheet}!${XLSX.utils.encode_cell({ r: ri, c: ci })}`;
+                const hasRemark = remarkedRefs.has(addr);
+                return (
+                  <td
+                    key={ci}
+                    className={`${annotating ? 'annotatable' : ''} ${hasRemark ? 'has-remark' : ''}`}
+                    title={hasRemark ? 'Une remarque existe sur cette cellule' : undefined}
+                    onClick={() => {
+                      if (!annotating) return;
+                      const rowLabel = String(
+                        row.find((v) => typeof v === 'string' && v.trim()) || ''
+                      ).slice(0, 50);
+                      onPick(`${addr}${rowLabel ? ` — ${rowLabel}` : ''}`);
+                    }}
+                  >
+                    {String(row[ci] ?? '')}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -400,7 +543,7 @@ function NewRemarkModal({
   const [type, setType] = useState<RemarkType>('observation');
   const [criticity, setCriticity] = useState<Criticity>('normale');
   const [lot, setLot] = useState('');
-  const [textRef, setTextRef] = useState('');
+  const [textRef, setTextRef] = useState(pending.textRef || '');
   const [dueDate, setDueDate] = useState('');
   const [selSujets, setSelSujets] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -444,59 +587,62 @@ function NewRemarkModal({
       <Field label="Référence complémentaire (chapitre, article CCTP, onglet/cellule Excel, local…)">
         <input value={textRef} onChange={(e) => setTextRef(e.target.value)} placeholder="§3.2 Dégagements / Onglet Lot 06, ligne 06.2.4 / Local 2.014" />
       </Field>
-      <div className="form-row">
-        <Field label="Type">
-          <select value={type} onChange={(e) => setType(e.target.value as RemarkType)}>
-            {(Object.keys(REMARK_TYPE_LABELS) as RemarkType[]).map((t) => (
-              <option key={t} value={t}>
-                {REMARK_TYPE_LABELS[t]}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Criticité">
-          <select value={criticity} onChange={(e) => setCriticity(e.target.value as Criticity)}>
-            {(Object.keys(CRITICITY_LABELS) as Criticity[]).map((c) => (
-              <option key={c} value={c}>
-                {CRITICITY_LABELS[c]}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-      <div className="form-row">
-        <Field label="Lot / thème">
-          <select value={lot} onChange={(e) => setLot(e.target.value)}>
-            <option value="">—</option>
-            {lots.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Échéance de réponse">
-          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-        </Field>
-      </div>
-      {sujets.length > 0 && (
-        <Field label="Sujets de suivi (local, ouvrage, thème — relie les remarques entre phases)">
-          <div className="status-buttons">
-            {sujets.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                className={`status-pill ${selSujets.includes(s.id) ? 'current' : ''}`}
-                style={{ '--sp-color': s.kind === 'local' ? '#1c4d77' : '#0e7d7d' } as React.CSSProperties}
-                onClick={() => toggleSujet(s.id)}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </Field>
-      )}
-      <p className="small muted">Seul le texte est obligatoire — le reste peut être complété plus tard.</p>
+      <details className="plus-options">
+        <summary>Plus d’options (type, criticité, lot, échéance, sujets)</summary>
+        <div className="form-row">
+          <Field label="Type">
+            <select value={type} onChange={(e) => setType(e.target.value as RemarkType)}>
+              {(Object.keys(REMARK_TYPE_LABELS) as RemarkType[]).map((t) => (
+                <option key={t} value={t}>
+                  {REMARK_TYPE_LABELS[t]}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Criticité">
+            <select value={criticity} onChange={(e) => setCriticity(e.target.value as Criticity)}>
+              {(Object.keys(CRITICITY_LABELS) as Criticity[]).map((c) => (
+                <option key={c} value={c}>
+                  {CRITICITY_LABELS[c]}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <div className="form-row">
+          <Field label="Lot / thème">
+            <select value={lot} onChange={(e) => setLot(e.target.value)}>
+              <option value="">—</option>
+              {lots.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Échéance de réponse">
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </Field>
+        </div>
+        {sujets.length > 0 && (
+          <Field label="Sujets de suivi (local, ouvrage, thème — relie les remarques entre phases)">
+            <div className="status-buttons">
+              {sujets.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`status-pill ${selSujets.includes(s.id) ? 'current' : ''}`}
+                  style={{ '--sp-color': s.kind === 'local' ? '#1c4d77' : '#0e7d7d' } as React.CSSProperties}
+                  onClick={() => toggleSujet(s.id)}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+        )}
+      </details>
+      <p className="small muted">Seul le texte est obligatoire — le reste peut être complété plus tard (par vous ou le secrétaire).</p>
       <div className="form-actions">
         <button className="btn secondary" onClick={onClose}>
           Annuler

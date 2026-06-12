@@ -12,6 +12,9 @@ export interface ProjectContext {
   phases: Phase[];
 }
 
+/** Rôles qui voient la section pilotage (tableau de bord, décisions, exigences, paramètres). */
+const PILOT_ROLES = ['MOA', 'AMO_PROGRAMMISTE', 'SECRETAIRE'];
+
 export default function ProjectLayout() {
   const { projectId } = useParams<{ projectId: string }>();
   const me = useSession((s) => s.me)!;
@@ -20,6 +23,7 @@ export default function ProjectLayout() {
   const setPhaseFilter = useSession((s) => s.setPhaseFilter);
   const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const { items: phases } = useList<Phase>(
     'phases',
@@ -44,6 +48,8 @@ export default function ProjectLayout() {
 
   if (!project) return null;
 
+  const isPilot = PILOT_ROLES.includes(me.role) || showAll;
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -51,7 +57,29 @@ export default function ProjectLayout() {
           Revue de documents
           <small>{project.name}</small>
         </div>
-        <div className="sidebar-section">Phase</div>
+        <nav>
+          <NavLink to={`/projet/${project.id}`} end>
+            🏠 Accueil
+          </NavLink>
+          <NavLink to={`/projet/${project.id}/documents`}>📄 Documents</NavLink>
+          <NavLink to={`/projet/${project.id}/remarques`}>💬 Remarques</NavLink>
+        </nav>
+        {isPilot ? (
+          <>
+            <div className="sidebar-section">Pilotage</div>
+            <nav>
+              <NavLink to={`/projet/${project.id}/tableau-de-bord`}>📊 Tableau de bord</NavLink>
+              <NavLink to={`/projet/${project.id}/decisions`}>⚖️ Décisions</NavLink>
+              <NavLink to={`/projet/${project.id}/exigences`}>📐 Exigences</NavLink>
+              <NavLink to={`/projet/${project.id}/parametres`}>⚙️ Paramètres</NavLink>
+            </nav>
+          </>
+        ) : (
+          <button className="sidebar-more" onClick={() => setShowAll(true)}>
+            Afficher le pilotage (tableau de bord, décisions…)
+          </button>
+        )}
+        <div className="sidebar-section" style={{ marginTop: 12 }}>Filtrer par phase</div>
         <select value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value)}>
           <option value="">Toutes les phases</option>
           {phases.map((p) => (
@@ -61,18 +89,6 @@ export default function ProjectLayout() {
             </option>
           ))}
         </select>
-        <nav>
-          <NavLink to={`/projet/${project.id}`} end>
-            📊 Tableau de bord
-          </NavLink>
-          <NavLink to={`/projet/${project.id}/documents`}>📄 Documents</NavLink>
-          <NavLink to={`/projet/${project.id}/remarques`}>💬 Remarques</NavLink>
-          <NavLink to={`/projet/${project.id}/decisions`}>⚖️ Décisions</NavLink>
-          <NavLink to={`/projet/${project.id}/sujets`}>🧵 Suivi par sujet</NavLink>
-          <NavLink to={`/projet/${project.id}/exigences`}>📐 Exigences</NavLink>
-          <NavLink to={`/projet/${project.id}/import`}>📥 Import Excel</NavLink>
-          <NavLink to={`/projet/${project.id}/parametres`}>⚙️ Paramètres</NavLink>
-        </nav>
         <div className="sidebar-section" style={{ marginTop: 12 }}>
           <NavLink to="/" style={{ color: '#c5d6e6' }}>
             ← Toutes les opérations

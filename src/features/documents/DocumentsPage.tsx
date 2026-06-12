@@ -4,6 +4,7 @@ import { pb } from '../../lib/pb';
 import { useList } from '../../lib/hooks';
 import { useSession } from '../../state/session';
 import { Badge, EmptyState, Field, Modal } from '../../components/ui';
+import { PhaseBanner } from '../../components/aides';
 import { carryOverRemarks } from '../remarques/remarkApi';
 import type { Doc, DocCategory, DocVersion, Phase, Remark, Tag } from '../../lib/types';
 import { DOC_CATEGORY_LABELS, OPEN_STATUSES, fmtDate } from '../../lib/types';
@@ -69,6 +70,7 @@ export default function DocumentsPage() {
           + Déposer un document
         </button>
       </div>
+      <PhaseBanner phases={phases} />
       {docs.length === 0 ? (
         <EmptyState
           icon="📄"

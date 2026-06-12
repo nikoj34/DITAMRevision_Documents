@@ -3,6 +3,7 @@ import { useSession } from './state/session';
 import ProfileScreen from './features/profil/ProfileScreen';
 import ProjectsPage from './features/projets/ProjectsPage';
 import ProjectLayout from './features/layout/ProjectLayout';
+import HomePage from './features/accueil/HomePage';
 import DashboardPage from './features/dashboard/DashboardPage';
 import DocumentsPage from './features/documents/DocumentsPage';
 import ViewerPage from './features/viewer/ViewerPage';
@@ -22,7 +23,8 @@ export default function App() {
     <Routes>
       <Route path="/" element={<ProjectsPage />} />
       <Route path="/projet/:projectId" element={<ProjectLayout />}>
-        <Route index element={<DashboardPage />} />
+        <Route index element={<HomePage />} />
+        <Route path="tableau-de-bord" element={<DashboardPage />} />
         <Route path="documents" element={<DocumentsPage />} />
         <Route path="documents/:docId" element={<ViewerPage />} />
         <Route path="remarques" element={<RemarksPage />} />

@@ -25,6 +25,7 @@ interface ImportReport {
   created: number;
   createdNew?: number;
   skipped?: number;
+  warnings?: { line: number; reason: string }[];
   rejected: { line: number; reason: string }[];
 }
 
@@ -34,6 +35,7 @@ const RESP_TARGETS: { key: string; label: string }[] = [
   { key: 'numero', label: 'N° de remarque (R-0042) *' },
   { key: 'response', label: 'Réponse (MOE) *' },
   { key: 'response_kind', label: 'Sens de la réponse' },
+  { key: 'respondent_name', label: 'Répondant (MOE)' },
   { key: 'body', label: 'Observation (pour les lignes nouvelles)' },
   { key: 'text_ref', label: 'Page / repère (pour les lignes nouvelles)' },
 ];
@@ -47,6 +49,7 @@ function guessResponsesMapping(headers: string[]): Record<string, string> {
     numero: find('n°', 'num', 'no '),
     response: headers.find((h) => norm(h) === 'reponse') || find('reponse moe', 'reponse'),
     response_kind: find('sens', 'suite donnee', 'avis'),
+    respondent_name: find('repondant', 'auteur reponse'),
     body: find('observation', 'remarque', 'commentaire'),
     text_ref: find('page', 'repere', 'localisation'),
   };
@@ -99,12 +102,41 @@ export default function ImportPage() {
     if (!sheet) return;
     setBusy(true);
     const rejected: { line: number; reason: string }[] = [];
+    const warnings: { line: number; reason: string }[] = [];
     let updated = 0;
     let createdNew = 0;
     let skipped = 0;
-    const author = respondent || me.id;
+    const defaultAuthor = respondent || me.id;
     const all = await pb.collection('remarks').getFullList<Remark>({ filter: `project = "${project.id}"` });
     const byNumber = new Map(all.map((r) => [r.number, r]));
+    const byExternalRef = new Map(all.filter((r) => r.external_ref).map((r) => [r.external_ref, r]));
+
+    // Garde-fous anti-doublons : réponses déjà présentes dans les fils
+    // (cas du même fichier ré-importé deux fois).
+    const existingReplies = await pb.collection('remark_replies').getFullList<{ remark: string; body: string }>({
+      filter: `remark.project = "${project.id}" && kind = "reponse"`,
+      fields: 'remark,body',
+    });
+    const repliesByRemark = new Map<string, string[]>();
+    for (const rep of existingReplies) {
+      const arr = repliesByRemark.get(rep.remark) || [];
+      arr.push(rep.body);
+      repliesByRemark.set(rep.remark, arr);
+    }
+
+    // Signature des réponses par la colonne « Répondant (MOE) » si présente.
+    const stakeholders = await pb.collection('stakeholders').getFullList<Stakeholder>();
+    const authorFor = async (name: string): Promise<string> => {
+      const n = name.trim();
+      if (!n) return defaultAuthor;
+      const found = stakeholders.find((s) => s.display_name.toLowerCase() === n.toLowerCase());
+      if (found) return found.id;
+      const created = await pb
+        .collection('stakeholders')
+        .create<Stakeholder>({ display_name: n, role: 'AUTRE', organization: 'MOE', active: true });
+      stakeholders.push(created);
+      return created.id;
+    };
 
     for (let i = 0; i < sheet.rows.length; i++) {
       const row = sheet.rows[i];
@@ -121,6 +153,24 @@ export default function ImportPage() {
             skipped++;
             continue;
           }
+          if (remark.status === 'traitee' || remark.status === 'sans_objet') {
+            warnings.push({
+              line: i + 2,
+              reason: `${fmtRemarkNum(remark.number)} est close — réponse NON intégrée (navette périmée ?)`,
+            });
+            continue;
+          }
+          const already = (repliesByRemark.get(remark.id) || []).some((b) =>
+            b.startsWith(response.slice(0, 180))
+          );
+          if (already) {
+            warnings.push({
+              line: i + 2,
+              reason: `${fmtRemarkNum(remark.number)} : réponse identique déjà au fil — ignorée (fichier déjà importé ?)`,
+            });
+            continue;
+          }
+          const author = await authorFor(get('respondent_name'));
           await pb.collection('remark_replies').create({
             remark: remark.id,
             author,
@@ -136,8 +186,13 @@ export default function ImportPage() {
           if (Object.keys(patch).length) await pb.collection('remarks').update(remark.id, patch);
           updated++;
         } else if (createNewRows && body) {
+          if (rawNum && byExternalRef.has(rawNum)) {
+            warnings.push({ line: i + 2, reason: `Ligne « ${rawNum} » déjà importée — ignorée` });
+            continue;
+          }
           // Ligne ajoutée par la MOE : nouvelle remarque à son nom.
           const number = await nextNumber('remarks', project.id);
+          const author = await authorFor(get('respondent_name'));
           await pb.collection('remarks').create({
             project: project.id,
             number,
@@ -172,23 +227,45 @@ export default function ImportPage() {
     if (createNewRows && file) {
       try {
         const extra = await readNewRemarksSheet(file);
+        const tags = extra?.length
+          ? await pb.collection('tags').getFullList<Tag>({ filter: `project = "${project.id}" && kind = "lot"` })
+          : [];
         for (const row of extra || []) {
           const body = String(row['Observation'] ?? '').trim();
           if (!body) continue;
+          const extRef = String(row['Réf. MOE'] ?? '').trim();
+          if (extRef && byExternalRef.has(extRef)) {
+            warnings.push({ line: 0, reason: `Nouvelle remarque « ${extRef} » déjà importée — ignorée` });
+            continue;
+          }
+          const lotLabel = String(row['Lot'] ?? '').trim();
+          let lotId = '';
+          if (lotLabel) {
+            const found = tags.find((t) => t.label.toLowerCase() === lotLabel.toLowerCase());
+            if (found) lotId = found.id;
+            else {
+              const createdTag = await pb
+                .collection('tags')
+                .create<Tag>({ project: project.id, label: lotLabel, kind: 'lot' });
+              tags.push(createdTag);
+              lotId = createdTag.id;
+            }
+          }
           const number = await nextNumber('remarks', project.id);
           const docInfo = String(row['Document'] ?? '').trim();
           const pageRef = String(row['Page / repère'] ?? '').trim();
           await pb.collection('remarks').create({
             project: project.id,
             number,
-            external_ref: String(row['Réf. MOE'] ?? '').trim(),
+            external_ref: extRef,
             anchor_kind: 'reference_texte',
             text_ref: [docInfo, pageRef].filter(Boolean).join(' / '),
             body,
             type: 'observation',
-            criticity: 'normale',
+            criticity: normalizeCriticity(row['Criticité']),
+            lot: lotId || null,
             status: 'a_traiter',
-            author,
+            author: defaultAuthor,
           });
           createdNew++;
         }
@@ -197,7 +274,7 @@ export default function ImportPage() {
       }
     }
 
-    setReport({ created: updated, createdNew, skipped, rejected });
+    setReport({ created: updated, createdNew, skipped, warnings, rejected });
     setBusy(false);
   }
 
@@ -396,6 +473,19 @@ export default function ImportPage() {
             </div>
           </div>
 
+          {report && (report.warnings?.length || 0) > 0 && (
+            <div className="alert warn">
+              ⚠️ {report.warnings!.length} ligne(s) ignorée(s) par sécurité :
+              <ul>
+                {report.warnings!.slice(0, 15).map((w, i) => (
+                  <li key={i}>
+                    {w.line ? `Ligne ${w.line} : ` : ''}
+                    {w.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {report && (
             <div className={`alert ${report.rejected.length ? 'warn' : 'info'}`}>
               ✅ {report.created} {mode === 'reponses' ? 'réponse(s) intégrée(s) au fil des remarques' : 'remarque(s) créée(s)'}.

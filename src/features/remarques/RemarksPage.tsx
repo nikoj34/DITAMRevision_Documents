@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { pb } from '../../lib/pb';
 import { useList } from '../../lib/hooks';
 import { useSession } from '../../state/session';
 import { Badge, EmptyState } from '../../components/ui';
+import { LegendeStatuts, PhaseBanner } from '../../components/aides';
 import { exportRegister } from '../../lib/excel';
 import RemarkDrawer from './RemarkDrawer';
-import type { Criticity, Decision, Doc, DocVersion, Remark, RemarkReply, RemarkStatus, Stakeholder, Tag } from '../../lib/types';
+import type { Criticity, Doc, DocVersion, Remark, RemarkReply, RemarkStatus, Stakeholder, Tag } from '../../lib/types';
 import {
   CRITICITY_COLORS,
   CRITICITY_LABELS,
@@ -21,7 +22,11 @@ import type { ProjectContext } from '../layout/ProjectLayout';
 export default function RemarksPage() {
   const { project, phases } = useOutletContext<ProjectContext>();
   const phaseFilter = useSession((s) => s.phaseFilter);
+  const me = useSession((s) => s.me)!;
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // « ?auteur=moi » : raccourci de l'Accueil vers ses propres remarques.
+  const mineOnly = searchParams.get('auteur') === 'moi';
 
   const { items: remarks, reload } = useList<Remark>(
     'remarks',
@@ -40,7 +45,7 @@ export default function RemarksPage() {
   const [status, setStatus] = useState('');
   const [crit, setCrit] = useState('');
   const [lot, setLot] = useState('');
-  const [author, setAuthor] = useState('');
+  const [author, setAuthor] = useState(mineOnly ? me.id : '');
   const [search, setSearch] = useState('');
   const [onlyOverdue, setOnlyOverdue] = useState(false);
   const [selected, setSelected] = useState<Remark | null>(null);
@@ -90,12 +95,7 @@ export default function RemarksPage() {
           author: rep.expand?.author?.display_name || '',
         };
       }
-      const decisions = await pb.collection('decisions').getFullList<Decision>({
-        filter: `project = "${project.id}"`,
-        sort: 'number',
-        expand: 'source_phase,decided_by,source_remarks',
-      });
-      await exportRegister(filtered, decisions, { projectName: project.name, phases, lastReplies });
+      await exportRegister(filtered, { projectName: project.name, phases, lastReplies });
     } finally {
       setExporting(false);
     }
@@ -104,17 +104,34 @@ export default function RemarksPage() {
   return (
     <div className="main">
       <div className="page-head">
-        <h2>Registre des remarques</h2>
+        <h2>Remarques</h2>
+        <LegendeStatuts />
         <span className="muted small">
           {filtered.length} / {remarks.length}
         </span>
+        <div className="view-toggle">
+          <button className="active">Liste</button>
+          <button onClick={() => navigate(`/projet/${project.id}/sujets`)}>Par sujet</button>
+        </div>
         <div className="spacer" />
-        <button className="btn secondary" onClick={doExport} disabled={exporting}>
-          ⬇ Exporter Excel (vue filtrée)
+        <button className="btn secondary" onClick={() => navigate(`/projet/${project.id}/import`)}>
+          📥 Importer (Excel / retour navette)
+        </button>
+        <button className="btn secondary" onClick={doExport} disabled={exporting} title="Fiche navette protégée à transmettre à la MOE">
+          ⬇ Exporter la fiche navette (vue filtrée)
         </button>
       </div>
 
+      <PhaseBanner phases={phases} />
+
       <div className="filters">
+        <button
+          className={`status-pill ${author === me.id ? 'current' : ''}`}
+          style={{ '--sp-color': '#1c4d77' } as React.CSSProperties}
+          onClick={() => setAuthor(author === me.id ? '' : me.id)}
+        >
+          Mes remarques
+        </button>
         <input
           type="search"
           placeholder="🔍 Rechercher dans les remarques…"

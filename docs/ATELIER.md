@@ -126,3 +126,58 @@ PIN par profil si exposition hors intranet.
 | Word/Excel | Fichiers stockés et téléchargeables, ancrage par référence textuelle (onglet/cellule/code article, chapitre) ; visionneuse réservée aux PDF |
 | Diff visuel de PDF | Non — la checklist des remarques reportées couvre le besoin |
 | Authentification | Profils sans mot de passe (intranet de confiance), traçabilité par signature des actions |
+
+---
+
+# Revue critique (atelier n°2 — 12/06/2026)
+
+Trois groupes ont relu l'application construite : technicien occasionnel +
+chef de projet MOA, secrétaire + MOE + économiste, expert UX. Diagnostic
+partagé : « une base de données navigable » à transformer en « outil de
+tâches » pour des utilisateurs qui n'ouvrent l'app que 2-3 fois par an.
+
+## Changements appliqués
+
+1. **Page Accueil orientée tâches** (nouvelle page d'arrivée) : « À relire »
+   (documents de la phase en cours), « Vos remarques » (réponses reçues, à
+   revérifier), alertes de pilotage pour les rôles MOA/AMO/secrétaire, mode
+   d'emploi en 4 étapes.
+2. **Menu selon le rôle** : 3 entrées pour un relecteur (Accueil, Documents,
+   Remarques) ; section « Pilotage » (Tableau de bord, Décisions, Exigences,
+   Paramètres) réservée aux rôles MOA/AMO/secrétaire (déverrouillable d'un
+   clic). « Import Excel » et « Suivi par sujet » ne sont plus des entrées :
+   l'import est un bouton de la page Remarques, le suivi par sujet une vue
+   (bascule Liste / Par sujet).
+3. **Bandeau de filtre de phase** non-ignorable quand un filtre est actif
+   (piège silencieux identifié), avec « Tout afficher ».
+4. **Visionneuse** : « Mode remarque » remplacé par un bouton primaire
+   « + Ajouter une remarque » + consigne ; formulaire réduit (texte +
+   référence, le reste sous « Plus d'options ») ; toast de confirmation
+   « ✓ Remarque R-00XX enregistrée » ; légende des statuts (« ? ») partout.
+5. **Visionneuse Excel lecture seule** : classeur affiché onglet par onglet,
+   clic sur une cellule → référence normalisée pré-remplie
+   (« Lot 06!E3 — Faux plafond 600x600 »), cellules déjà commentées
+   surlignées. Réponse au besoin n°1 de l'économiste.
+6. **Navette durcie** : tri autorisé côté MOE (le rapprochement par n° le
+   permet sans risque), colonnes « Répondant (MOE) » et « Renvoi » 
+   déverrouillées (réponses signées du bon intervenant à l'import), feuille
+   décisions retirée de la navette (export séparé sur la page Décisions),
+   feuille « Nouvelles remarques » enrichie (Lot, Criticité avec liste).
+7. **Import anti-doublons** : réponse identique déjà au fil → ignorée
+   (double ré-import) ; remarque close → réponse NON intégrée, listée en
+   avertissement (navette périmée) ; ligne nouvelle déjà importée (même
+   réf. MOE) → ignorée. Rapport en trois sections (intégrées /
+   avertissements / rejets).
+
+## Backlog issu de la revue (non traité, priorisé)
+
+- Entité « navette » en base (journal des exports/imports, destinataire,
+  statut envoyée/retournée/intégrée) + prévisualisation avant import.
+- Colonne « en attente de » (MOE/MOA/relecteur) + ancienneté sur le
+  registre ; compteur « en attente MOE > 15 j ».
+- Export PDF « ordre du jour de revue » (remarques ouvertes par lot).
+- Réconciliation assistée des références Excel au changement d'indice
+  (rapprochement par code article + libellé).
+- Aperçu Word (conversion docx → HTML via mammoth.js).
+- Simplification éventuelle à 4 statuts + drapeau « bloquante » (à valider
+  à l'usage).

@@ -12,6 +12,34 @@ import {
   fmtRemarkNum,
 } from './types';
 
+/** Export simple du registre des décisions (usage interne / annexe CR). */
+export function exportDecisions(decisions: Decision[], projectName: string) {
+  const rows = decisions.map((d) => ({
+    'N°': fmtDecisionNum(d.number),
+    'Intitulé': d.title,
+    'Détail': stripHtml(d.body),
+    'Statut': DECISION_STATUS_LABELS[d.status],
+    'Phase d’origine': d.expand?.source_phase?.label || '',
+    'Décideur': d.expand?.decided_by?.display_name || '',
+    'Date décision': fmtDate(d.decided_at),
+    'Référence CR / arbitrage': d.meeting_ref || '',
+    'Impact coût (€)': d.cost_impact || '',
+    'Impact surface (m²)': d.surface_impact || '',
+    'Remarques liées': (d.expand?.source_remarks || []).map((r) => fmtRemarkNum(r.number)).join(', '),
+    'Vérifications par phase': (d.verifications || [])
+      .map((v) => `${v.phase_label}: ${v.result}${v.note ? ` (${v.note})` : ''}`)
+      .join(' ; '),
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 7 }, { wch: 40 }, { wch: 60 }, { wch: 12 }, { wch: 14 }, { wch: 22 },
+    { wch: 12 }, { wch: 24 }, { wch: 12 }, { wch: 14 }, { wch: 20 }, { wch: 50 },
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, 'Registre des décisions');
+  XLSX.writeFile(wb, `Decisions_${slug(projectName)}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
 // ─────────────────────────── Export ───────────────────────────
 // Trame du tableau d'observations type des marchés publics français :
 // l'export doit être livrable tel quel en annexe d'un compte rendu.
@@ -35,7 +63,7 @@ const RESPONSE_KIND_LIST = Object.values(RESPONSE_KIND_LABELS).join(',');
  * Seules les colonnes Réponse / Sens de la réponse sont saisissables.
  * Les ajouts de la MOE passent par la feuille dédiée, déprotégée.
  */
-export async function exportRegister(remarks: Remark[], decisions: Decision[], ctx: ExportContext) {
+export async function exportRegister(remarks: Remark[], ctx: ExportContext) {
   const phaseById = new Map(ctx.phases.map((p) => [p.id, p]));
   const wb = new ExcelJS.Workbook();
 
@@ -56,13 +84,15 @@ export async function exportRegister(remarks: Remark[], decisions: Decision[], c
     { header: 'Observation', width: 60 },
     { header: 'Réponse', width: 60, editable: true },
     { header: 'Sens de la réponse', width: 22, editable: true },
-    { header: 'Assignée à', width: 18 },
+    { header: 'Répondant (MOE)', width: 22, editable: true },
+    { header: 'Renvoi (plans / pièces)', width: 26, editable: true },
     { header: 'Échéance', width: 11 },
     { header: 'Statut', width: 20 },
-    { header: 'Date de clôture', width: 12 },
   ];
   ws.columns = columns.map((c) => ({ header: c.header, width: c.width }));
-  const responseCol = columns.findIndex((c) => c.header === 'Réponse') + 1;
+  const editableCols = columns
+    .map((c, i) => (c.editable ? i + 1 : 0))
+    .filter(Boolean);
   const kindCol = columns.findIndex((c) => c.header === 'Sens de la réponse') + 1;
 
   for (const r of remarks) {
@@ -85,10 +115,10 @@ export async function exportRegister(remarks: Remark[], decisions: Decision[], c
       stripHtml(r.body),
       reply ? stripHtml(reply.body) : '',
       r.response_kind ? RESPONSE_KIND_LABELS[r.response_kind] : '',
-      r.expand?.assigned_to?.display_name || '',
+      reply?.author || '',
+      '',
       fmtDate(r.due_date),
       REMARK_STATUS_LABELS[r.status],
-      fmtDate(r.closed_at),
     ]);
   }
 
@@ -99,7 +129,7 @@ export async function exportRegister(remarks: Remark[], decisions: Decision[], c
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columns.length } };
   for (let i = 2; i <= remarks.length + 1; i++) {
     ws.getCell(i, 12).alignment = { wrapText: true, vertical: 'top' };
-    for (const col of [responseCol, kindCol]) {
+    for (const col of editableCols) {
       const cell = ws.getCell(i, col);
       cell.protection = { locked: false };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF6DC' } };
@@ -112,13 +142,15 @@ export async function exportRegister(remarks: Remark[], decisions: Decision[], c
     };
   }
   // Protection : tout est verrouillé sauf les cellules ci-dessus ;
-  // insertion et suppression de lignes interdites.
+  // insertion et suppression de lignes interdites. Le TRI reste autorisé
+  // (demande MOE : dispatcher par lot) — sans risque, le rapprochement à
+  // l'import se fait par n° de remarque, pas par position de ligne.
   await ws.protect('CIRAD', {
     selectLockedCells: true,
     selectUnlockedCells: true,
     formatColumns: true,
     formatRows: true,
-    sort: false,
+    sort: true,
     autoFilter: true,
     insertRows: false,
     deleteRows: false,
@@ -132,52 +164,23 @@ export async function exportRegister(remarks: Remark[], decisions: Decision[], c
     { header: 'Réf. MOE', width: 12 },
     { header: 'Document', width: 32 },
     { header: 'Page / repère', width: 18 },
+    { header: 'Lot', width: 18 },
+    { header: 'Criticité', width: 14 },
     { header: 'Observation', width: 80 },
   ];
   wsNew.getRow(1).font = { bold: true };
   wsNew.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEAF5' } };
   wsNew.insertRow(1, [
-    'Ajoutez ici vos remarques nouvelles (une par ligne). Ne modifiez pas la feuille « Observations » en dehors des colonnes Réponse / Sens de la réponse.',
+    'Ajoutez ici vos remarques nouvelles (une par ligne). Ne modifiez pas la feuille « Observations » en dehors des colonnes jaunes.',
   ]);
   wsNew.getRow(1).font = { italic: true, color: { argb: 'FF6B7681' } };
-
-  // ── Feuille 3 : Registre des décisions (protégée, lecture seule) ──
-  const wsDec = wb.addWorksheet('Registre des décisions');
-  wsDec.columns = [
-    { header: 'N°', width: 8 },
-    { header: 'Intitulé', width: 40 },
-    { header: 'Détail', width: 60 },
-    { header: 'Statut', width: 12 },
-    { header: 'Phase d’origine', width: 14 },
-    { header: 'Décideur', width: 22 },
-    { header: 'Date décision', width: 12 },
-    { header: 'Référence CR / arbitrage', width: 24 },
-    { header: 'Impact coût (€)', width: 12 },
-    { header: 'Impact surface (m²)', width: 14 },
-    { header: 'Remarques liées', width: 20 },
-    { header: 'Vérifications par phase', width: 50 },
-  ];
-  wsDec.getRow(1).font = { bold: true };
-  wsDec.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEAF5' } };
-  for (const d of decisions) {
-    wsDec.addRow([
-      fmtDecisionNum(d.number),
-      d.title,
-      stripHtml(d.body),
-      DECISION_STATUS_LABELS[d.status],
-      d.expand?.source_phase?.label || '',
-      d.expand?.decided_by?.display_name || '',
-      fmtDate(d.decided_at),
-      d.meeting_ref || '',
-      d.cost_impact || '',
-      d.surface_impact || '',
-      (d.expand?.source_remarks || []).map((r) => fmtRemarkNum(r.number)).join(', '),
-      (d.verifications || [])
-        .map((v) => `${v.phase_label}: ${v.result}${v.note ? ` (${v.note})` : ''}`)
-        .join(' ; '),
-    ]);
+  for (let i = 3; i <= 202; i++) {
+    wsNew.getCell(i, 5).dataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: ['"Bloquante,Importante,Normale,Mineure"'],
+    };
   }
-  await wsDec.protect('CIRAD', { selectLockedCells: true, selectUnlockedCells: true, autoFilter: true });
 
   const today = new Date().toISOString().slice(0, 10);
   const buf = await wb.xlsx.writeBuffer();
