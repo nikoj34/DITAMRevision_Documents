@@ -10,7 +10,6 @@ import RemarkDrawer from '../remarques/RemarkDrawer';
 import type {
   Remark,
   Requirement,
-  RequirementOrigin,
   RequirementStatus,
   RequirementVerifResult,
   Tag,
@@ -18,8 +17,8 @@ import type {
 import {
   REMARK_STATUS_COLORS,
   REMARK_STATUS_LABELS,
-  REQUIREMENT_ORIGIN_COLORS,
-  REQUIREMENT_ORIGIN_LABELS,
+  ORIGIN_SUGGESTIONS,
+  originColor,
   REQUIREMENT_STATUS_COLORS,
   REQUIREMENT_STATUS_LABELS,
   REQ_VERIF_COLORS,
@@ -117,7 +116,7 @@ export default function RequirementsPage() {
         'Exigence': r.label,
         'Description': r.description,
         'Valeur cible': r.target_value,
-        'Origine': r.origin ? REQUIREMENT_ORIGIN_LABELS[r.origin] || r.origin : '',
+        'Origine': r.origin || '',
         'Source': r.source_ref,
         'Sujets': (r.expand?.themes || []).map((t) => t.label).join(', '),
         'Statut': REQUIREMENT_STATUS_LABELS[r.status] || r.status,
@@ -190,9 +189,9 @@ export default function RequirementsPage() {
         </select>
         <select value={originFilter} onChange={(e) => setOriginFilter(e.target.value)}>
           <option value="">Toutes origines</option>
-          {(Object.keys(REQUIREMENT_ORIGIN_LABELS) as RequirementOrigin[]).map((o) => (
+          {[...new Set(requirements.map((r) => r.origin).filter(Boolean))].sort().map((o) => (
             <option key={o} value={o}>
-              {REQUIREMENT_ORIGIN_LABELS[o]}
+              {o}
             </option>
           ))}
         </select>
@@ -241,11 +240,7 @@ export default function RequirementsPage() {
                     {r.source_ref && <div className="small muted">{r.source_ref}</div>}
                   </td>
                   <td>
-                    {r.origin && (
-                      <Badge color={REQUIREMENT_ORIGIN_COLORS[r.origin] || '#6b7681'}>
-                        {r.origin === 'DSST' ? 'DSST' : REQUIREMENT_ORIGIN_LABELS[r.origin] || r.origin}
-                      </Badge>
-                    )}
+                    {r.origin && <Badge color={originColor(r.origin)}>{r.origin}</Badge>}
                   </td>
                   <td>{r.target_value}</td>
                   <td className="small">{(r.expand?.themes || []).map((t) => t.label).join(', ')}</td>
@@ -327,7 +322,7 @@ function RequirementForm({
   const [label, setLabel] = useState('');
   const [description, setDescription] = useState('');
   const [target, setTarget] = useState('');
-  const [origin, setOrigin] = useState<RequirementOrigin>('PROGRAMME');
+  const [origin, setOrigin] = useState('Programme');
   const [source, setSource] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -341,7 +336,7 @@ function RequirementForm({
         label: label.trim(),
         description: description.trim(),
         target_value: target.trim(),
-        origin,
+        origin: origin.trim(),
         source_ref: source.trim(),
         status: 'active',
         verifications: [],
@@ -374,14 +369,13 @@ function RequirementForm({
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} />
       </Field>
       <div className="form-row">
-        <Field label="Origine de l’exigence">
-          <select value={origin} onChange={(e) => setOrigin(e.target.value as RequirementOrigin)}>
-            {(Object.keys(REQUIREMENT_ORIGIN_LABELS) as RequirementOrigin[]).map((o) => (
-              <option key={o} value={o}>
-                {REQUIREMENT_ORIGIN_LABELS[o]}
-              </option>
+        <Field label="Origine de l’exigence (libre)">
+          <input list="origin-suggestions" value={origin} onChange={(e) => setOrigin(e.target.value)} placeholder="Programme, DSST, Équipe de recherche…" />
+          <datalist id="origin-suggestions">
+            {ORIGIN_SUGGESTIONS.map((o) => (
+              <option key={o} value={o} />
             ))}
-          </select>
+          </datalist>
         </Field>
         <Field label="Source (chapitre, fiche espace, note DSST)">
           <input value={source} onChange={(e) => setSource(e.target.value)} placeholder="PTD §4.2 / Note DSST du 03/05" />
@@ -410,7 +404,7 @@ function ImportRequirementsModal({
 }) {
   const [sheet, setSheet] = useState<SheetData | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
-  const [defaultOrigin, setDefaultOrigin] = useState<RequirementOrigin>('PROGRAMME');
+  const [defaultOrigin, setDefaultOrigin] = useState('Programme');
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<{ created: number; rejected: { line: number; reason: string }[] } | null>(null);
 
@@ -458,7 +452,7 @@ function ImportRequirementsModal({
           label,
           description: get('description'),
           target_value: get('target_value'),
-          origin: defaultOrigin,
+          origin: defaultOrigin.trim(),
           source_ref: get('source_ref'),
           status: 'active',
           verifications: [],
@@ -500,14 +494,13 @@ function ImportRequirementsModal({
               </select>
             </div>
           ))}
-          <Field label="Origine appliquée à toutes les lignes importées">
-            <select value={defaultOrigin} onChange={(e) => setDefaultOrigin(e.target.value as RequirementOrigin)}>
-              {(Object.keys(REQUIREMENT_ORIGIN_LABELS) as RequirementOrigin[]).map((o) => (
-                <option key={o} value={o}>
-                  {REQUIREMENT_ORIGIN_LABELS[o]}
-                </option>
+          <Field label="Origine appliquée à toutes les lignes importées (libre)">
+            <input list="origin-suggestions-import" value={defaultOrigin} onChange={(e) => setDefaultOrigin(e.target.value)} />
+            <datalist id="origin-suggestions-import">
+              {ORIGIN_SUGGESTIONS.map((o) => (
+                <option key={o} value={o} />
               ))}
-            </select>
+            </datalist>
           </Field>
           <p className="small muted">
             Importez le programme et la note DSST séparément (un fichier par origine), pour que chaque exigence soit
@@ -643,9 +636,7 @@ function RequirementDrawer({
           <>
             <dt>Origine</dt>
             <dd>
-              <Badge color={REQUIREMENT_ORIGIN_COLORS[requirement.origin] || '#6b7681'}>
-                {REQUIREMENT_ORIGIN_LABELS[requirement.origin] || requirement.origin}
-              </Badge>
+              <Badge color={originColor(requirement.origin)}>{requirement.origin}</Badge>
             </dd>
           </>
         )}

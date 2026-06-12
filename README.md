@@ -35,10 +35,15 @@ exploitants, secrétaire de séance) — voir [`docs/ATELIER.md`](docs/ATELIER.m
 - **Suivi par sujet** : étiquetez remarques et décisions par local, ouvrage
   ou thème (« Escalier aile B »…) et consultez leur histoire complète à
   travers les phases, même quand les documents sont reformulés.
-- **Référentiel d'exigences** (programme, DSST santé & sécurité au travail,
-  réglementation, sûreté…) : chaque exigence est vérifiée phase après phase
-  (conforme / non conforme / écart accepté / non vérifiable), avec taux de
-  conformité, remarques rattachées, import/export Excel du référentiel.
+- **Référentiel d'exigences** (origine libre : programme, DSST santé &
+  sécurité au travail, équipe de recherche, réglementation, sûreté…) :
+  chaque exigence est vérifiée phase après phase (conforme / non conforme /
+  écart accepté / non vérifiable), avec taux de conformité, remarques
+  rattachées, import/export Excel du référentiel.
+- **Aller-retour MOE sans accès à l'application** (fiche navette) : export
+  du registre Excel → la MOE remplit les colonnes Réponse / Sens de la
+  réponse dans Excel → ré-import qui rattache chaque réponse à sa remarque
+  par son n°, met à jour les statuts et trace tout dans le fil signé.
 - **Export Excel** conforme au tableau d'observations type des marchés
   publics (+ feuille registre des décisions), livrable tel quel en annexe de
   compte rendu. **Import Excel** tolérant avec assistant de correspondance

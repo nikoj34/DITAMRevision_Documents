@@ -9,32 +9,59 @@ import {
   guessMapping,
   normalizeCriticity,
   normalizeDate,
+  normalizeResponseKind,
   normalizeStatus,
+  parseRemarkNumber,
   readSheet,
   type SheetData,
 } from '../../lib/excel';
 import { nextNumber } from '../../lib/hooks';
-import type { Doc, DocVersion, Stakeholder, Tag } from '../../lib/types';
+import type { Doc, DocVersion, Remark, Stakeholder, Tag } from '../../lib/types';
+import { ROLE_LABELS, fmtRemarkNum } from '../../lib/types';
 import type { ProjectContext } from '../layout/ProjectLayout';
 
 interface ImportReport {
   created: number;
+  skipped?: number;
   rejected: { line: number; reason: string }[];
+}
+
+type ImportMode = 'nouvelles' | 'reponses';
+
+const RESP_TARGETS: { key: string; label: string }[] = [
+  { key: 'numero', label: 'N° de remarque (R-0042) *' },
+  { key: 'response', label: 'Réponse (MOE) *' },
+  { key: 'response_kind', label: 'Sens de la réponse' },
+];
+
+function guessResponsesMapping(headers: string[]): Record<string, string> {
+  const norm = (s: string) =>
+    s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const find = (...needles: string[]) =>
+    headers.find((h) => needles.some((n) => norm(h).includes(n))) || '';
+  return {
+    numero: find('n°', 'num', 'no '),
+    response: headers.find((h) => norm(h) === 'reponse') || find('reponse moe', 'reponse'),
+    response_kind: find('sens', 'suite donnee', 'avis'),
+  };
 }
 
 export default function ImportPage() {
   const { project } = useOutletContext<ProjectContext>();
   const me = useSession((s) => s.me)!;
 
+  const [mode, setMode] = useState<ImportMode>('nouvelles');
   const [sheet, setSheet] = useState<SheetData | null>(null);
   const [fileName, setFileName] = useState('');
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [targetVersion, setTargetVersion] = useState('');
+  const [respondent, setRespondent] = useState('');
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<ImportReport | null>(null);
 
   const { items: docs } = useList<Doc>('documents', { sort: 'title' }, [project.id]);
   const { items: versions } = useList<DocVersion>('document_versions', { sort: '-version_num' }, [project.id]);
+  const { items: people } = useList<Stakeholder>('stakeholders', { sort: 'display_name' });
 
   const projectDocs = docs.filter((d) => !d.archived);
   const versionOptions = projectDocs.flatMap((d) =>
@@ -49,7 +76,61 @@ export default function ImportPage() {
     setFileName(f.name);
     const data = await readSheet(f);
     setSheet(data);
-    setMapping(guessMapping(data.headers));
+    setMapping(mode === 'reponses' ? guessResponsesMapping(data.headers) : guessMapping(data.headers));
+  }
+
+  // Aller-retour « fiche navette » : la MOE (sans accès à l'application)
+  // remplit les colonnes Réponse / Sens de la réponse dans l'export Excel ;
+  // on ré-importe ici, rapproché par le N° de remarque — rien n'est créé,
+  // les remarques existantes sont mises à jour et la réponse est tracée
+  // dans le fil au nom de l'intervenant MOE choisi.
+  async function runResponsesImport() {
+    if (!sheet) return;
+    setBusy(true);
+    const rejected: { line: number; reason: string }[] = [];
+    let updated = 0;
+    let skipped = 0;
+    const author = respondent || me.id;
+    const all = await pb.collection('remarks').getFullList<Remark>({ filter: `project = "${project.id}"` });
+    const byNumber = new Map(all.map((r) => [r.number, r]));
+
+    for (let i = 0; i < sheet.rows.length; i++) {
+      const row = sheet.rows[i];
+      const get = (key: string) => (mapping[key] ? String(row[mapping[key]] ?? '').trim() : '');
+      const num = parseRemarkNumber(get('numero') || get('external_ref'));
+      const response = get('response');
+      if (!response) {
+        skipped++;
+        continue;
+      }
+      if (num === null) {
+        rejected.push({ line: i + 2, reason: 'N° de remarque illisible' });
+        continue;
+      }
+      const remark = byNumber.get(num);
+      if (!remark) {
+        rejected.push({ line: i + 2, reason: `Remarque ${fmtRemarkNum(num)} introuvable dans ce projet` });
+        continue;
+      }
+      try {
+        await pb.collection('remark_replies').create({
+          remark: remark.id,
+          author,
+          kind: 'reponse',
+          body: `${response}\n\n(réponse MOE importée du fichier « ${fileName} »)`,
+        });
+        const patch: Record<string, unknown> = {};
+        const kind = normalizeResponseKind(get('response_kind'));
+        if (kind) patch.response_kind = kind;
+        if (remark.status === 'a_traiter' || remark.status === 'en_cours') patch.status = 'repondue';
+        if (Object.keys(patch).length) await pb.collection('remarks').update(remark.id, patch);
+        updated++;
+      } catch (e) {
+        rejected.push({ line: i + 2, reason: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    setReport({ created: updated, skipped, rejected });
+    setBusy(false);
   }
 
   async function runImport() {
@@ -130,15 +211,32 @@ export default function ImportPage() {
   return (
     <div className="main" style={{ maxWidth: 860 }}>
       <div className="page-head">
-        <h2>Import d’un tableau d’observations Excel</h2>
+        <h2>Import Excel</h2>
       </div>
       <p className="muted">
-        Pour reprendre les projets en cours : importez votre tableau existant. L’import est tolérant — ligne à ligne,
-        avec rapport détaillé. Les numéros d’origine sont conservés en « réf. externe », la numérotation interne
-        n’écrase jamais l’historique des comptes rendus signés.
+        Deux usages : <b>reprendre un tableau d’observations existant</b> (projet en cours), ou <b>intégrer les
+        réponses de la MOE</b> qui travaille dans Excel sans accès à l’application (aller-retour « fiche navette » :
+        exportez le registre, la MOE remplit les colonnes Réponse / Sens de la réponse, ré-importez ici).
       </p>
 
       <div className="card" style={{ marginBottom: 16 }}>
+        <Field label="Type d’import">
+          <select
+            value={mode}
+            onChange={(e) => {
+              setMode(e.target.value as ImportMode);
+              setReport(null);
+              if (sheet) {
+                setMapping(
+                  e.target.value === 'reponses' ? guessResponsesMapping(sheet.headers) : guessMapping(sheet.headers)
+                );
+              }
+            }}
+          >
+            <option value="nouvelles">Nouvelles remarques (reprise d’un tableau existant)</option>
+            <option value="reponses">Réponses de la MOE (aller-retour fiche navette)</option>
+          </select>
+        </Field>
         <Field label="Fichier Excel (.xlsx, .xls)">
           <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => onFile(e.target.files?.[0] || null)} />
         </Field>
@@ -159,7 +257,7 @@ export default function ImportPage() {
               L’assistant a deviné les correspondances probables — vérifiez et corrigez si besoin. Seule
               l’« Observation » est obligatoire.
             </p>
-            {IMPORT_TARGETS.map((t) => (
+            {(mode === 'reponses' ? RESP_TARGETS : IMPORT_TARGETS).map((t) => (
               <div key={t.key} className="form-row" style={{ alignItems: 'center', marginBottom: 6 }}>
                 <span className="small" style={{ width: 240 }}>
                   {t.label}
@@ -177,26 +275,48 @@ export default function ImportPage() {
                 </select>
               </div>
             ))}
-            <Field label="Rattacher les remarques à un document (optionnel)">
-              <select value={targetVersion} onChange={(e) => setTargetVersion(e.target.value)}>
-                <option value="">— aucun document (remarques générales du projet) —</option>
-                {versionOptions.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            {mode === 'nouvelles' ? (
+              <Field label="Rattacher les remarques à un document (optionnel)">
+                <select value={targetVersion} onChange={(e) => setTargetVersion(e.target.value)}>
+                  <option value="">— aucun document (remarques générales du projet) —</option>
+                  {versionOptions.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : (
+              <Field label="Réponses enregistrées au nom de (l’intervenant MOE)">
+                <select value={respondent} onChange={(e) => setRespondent(e.target.value)}>
+                  <option value="">{me.display_name} (moi — saisie pour le compte de la MOE)</option>
+                  {people.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.display_name} — {ROLE_LABELS[p.role] || p.role}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
             <div className="form-actions">
-              <button className="btn" onClick={runImport} disabled={busy || !mapping['body']}>
-                {busy ? 'Import en cours…' : `Importer ${sheet.rows.length} ligne(s)`}
+              <button
+                className="btn"
+                onClick={mode === 'reponses' ? runResponsesImport : runImport}
+                disabled={busy || (mode === 'reponses' ? !mapping['numero'] || !mapping['response'] : !mapping['body'])}
+              >
+                {busy
+                  ? 'Import en cours…'
+                  : mode === 'reponses'
+                    ? `Intégrer les réponses (${sheet.rows.length} ligne(s))`
+                    : `Importer ${sheet.rows.length} ligne(s)`}
               </button>
             </div>
           </div>
 
           {report && (
             <div className={`alert ${report.rejected.length ? 'warn' : 'info'}`}>
-              ✅ {report.created} remarque(s) créée(s).
+              ✅ {report.created} {mode === 'reponses' ? 'réponse(s) intégrée(s) au fil des remarques' : 'remarque(s) créée(s)'}.
+              {report.skipped ? ` ${report.skipped} ligne(s) sans réponse ignorée(s).` : ''}
               {report.rejected.length > 0 && (
                 <>
                   <br />⚠ {report.rejected.length} ligne(s) rejetée(s) :

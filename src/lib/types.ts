@@ -339,28 +339,35 @@ export interface RequirementVerification {
   note: string;
 }
 
-export type RequirementOrigin =
-  | 'PROGRAMME' | 'DSST' | 'REGLEMENTATION' | 'SURETE' | 'ENVIRONNEMENT' | 'EXPLOITATION' | 'AUTRE';
+/** Origine d'une exigence : texte libre, avec suggestions courantes. */
+export const ORIGIN_SUGGESTIONS: string[] = [
+  'Programme',
+  'DSST — Santé & sécurité au travail',
+  'Équipe de recherche',
+  'Utilisateurs',
+  'Réglementation',
+  'Sûreté',
+  'Environnement',
+  'Exploitation-maintenance',
+  'Informatique / réseaux',
+];
 
-export const REQUIREMENT_ORIGIN_LABELS: Record<RequirementOrigin, string> = {
-  PROGRAMME: 'Programme',
-  DSST: 'DSST — Santé & sécurité au travail',
-  REGLEMENTATION: 'Réglementation',
-  SURETE: 'Sûreté',
-  ENVIRONNEMENT: 'Environnement',
-  EXPLOITATION: 'Exploitation-maintenance',
-  AUTRE: 'Autre',
-};
+const ORIGIN_COLOR_MAP: [RegExp, string][] = [
+  [/programme/i, '#1c4d77'],
+  [/dsst|sant[ée]|s[ée]curit[ée] au travail/i, '#c0392b'],
+  [/recherche/i, '#b3621b'],
+  [/utilisateur/i, '#2f8a4c'],
+  [/r[ée]glement/i, '#8a5fc0'],
+  [/s[ûu]ret[ée]/i, '#3e4750'],
+  [/environnement/i, '#2f8a4c'],
+  [/exploitation|maintenance/i, '#0e7d7d'],
+  [/informatique|r[ée]seau/i, '#23618f'],
+];
 
-export const REQUIREMENT_ORIGIN_COLORS: Record<RequirementOrigin, string> = {
-  PROGRAMME: '#1c4d77',
-  DSST: '#c0392b',
-  REGLEMENTATION: '#8a5fc0',
-  SURETE: '#3e4750',
-  ENVIRONNEMENT: '#2f8a4c',
-  EXPLOITATION: '#0e7d7d',
-  AUTRE: '#6b7681',
-};
+export function originColor(origin: string): string {
+  for (const [re, color] of ORIGIN_COLOR_MAP) if (re.test(origin)) return color;
+  return '#6b7681';
+}
 
 export interface Requirement extends BaseRecord {
   project: string;
@@ -368,7 +375,7 @@ export interface Requirement extends BaseRecord {
   label: string;
   description: string;
   target_value: string;
-  origin: RequirementOrigin | '';
+  origin: string;
   source_ref: string;
   themes: string[];
   status: RequirementStatus;

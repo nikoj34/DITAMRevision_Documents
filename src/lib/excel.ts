@@ -186,6 +186,30 @@ export function normalizeStatus(v: unknown): string {
   return STATUS_MAP[k] || 'a_traiter';
 }
 
+/** Sens de réponse MOE en texte libre → valeur normalisée (ou ''). */
+export function normalizeResponseKind(v: unknown): string {
+  const k = String(v ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+  if (!k) return '';
+  if (k.includes('partiel')) return 'prise_en_compte_partielle';
+  if (k.includes('prise en compte') || k.includes('pris en compte') || k === 'ok' || k.includes('accord'))
+    return 'prise_en_compte';
+  if (k.includes('refus')) return 'refusee';
+  if (k.includes('precision')) return 'demande_precision';
+  if (k.includes('arbitrage')) return 'necessite_arbitrage';
+  if (k.includes('hors mission') || k.includes('avenant')) return 'hors_mission';
+  return '';
+}
+
+/** Extrait le numéro interne d'une référence type "R-0042" (ou "42"). */
+export function parseRemarkNumber(v: unknown): number | null {
+  const m = String(v ?? '').match(/(\d+)\s*$/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 export function normalizeDate(v: unknown): string {
   if (!v) return '';
   if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString();
