@@ -4,7 +4,7 @@ import { pb } from '../../lib/pb';
 import { nextNumber, useList } from '../../lib/hooks';
 import { useSession } from '../../state/session';
 import { Badge, Drawer, EmptyState, Field, Modal } from '../../components/ui';
-import type { Decision, DecisionStatus, DecisionVerification, Phase } from '../../lib/types';
+import type { Decision, DecisionStatus, DecisionVerification, Phase, Tag } from '../../lib/types';
 import {
   DECISION_STATUS_COLORS,
   DECISION_STATUS_LABELS,
@@ -261,6 +261,18 @@ function DecisionDrawer({
   const [verifPhase, setVerifPhase] = useState(phases.find((p) => p.status === 'en_cours')?.id || '');
   const [verifNote, setVerifNote] = useState('');
   const [statusNote, setStatusNote] = useState('');
+  const { items: sujets } = useList<Tag>(
+    'tags',
+    { filter: `project = "${decision.project}" && kind != "lot"`, sort: 'label' },
+    [decision.project]
+  );
+
+  async function toggleSujet(id: string) {
+    const cur = decision.themes || [];
+    const next = cur.includes(id) ? cur.filter((t) => t !== id) : [...cur, id];
+    await pb.collection('decisions').update(decision.id, { themes: next });
+    onChanged();
+  }
 
   async function setStatus(s: DecisionStatus) {
     if (s === decision.status) return;
@@ -348,6 +360,27 @@ function DecisionDrawer({
           </>
         )}
       </dl>
+
+      {sujets.length > 0 && (
+        <>
+          <h4 className="small" style={{ textTransform: 'uppercase', color: 'var(--gris-500)' }}>
+            Sujets de suivi
+          </h4>
+          <div className="status-buttons">
+            {sujets.map((s) => (
+              <button
+                key={s.id}
+                className={`status-pill ${(decision.themes || []).includes(s.id) ? 'current' : ''}`}
+                style={{ '--sp-color': s.kind === 'local' ? '#1c4d77' : '#0e7d7d' } as React.CSSProperties}
+                onClick={() => toggleSujet(s.id)}
+                disabled={busy}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <h4 className="small" style={{ textTransform: 'uppercase', color: 'var(--gris-500)' }}>
         Changer le statut

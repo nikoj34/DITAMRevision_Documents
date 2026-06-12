@@ -14,6 +14,7 @@ export interface NewRemarkInput {
   type?: string;
   criticity?: string;
   lot?: string;
+  themes?: string[];
   due_date?: string;
   assigned_to?: string;
   external_ref?: string;

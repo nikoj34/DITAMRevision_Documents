@@ -19,12 +19,13 @@ export default function ParamsPage() {
   );
   const [newLot, setNewLot] = useState('');
   const [newTheme, setNewTheme] = useState('');
+  const [newLocal, setNewLocal] = useState('');
 
   async function setPhaseStatus(p: Phase, status: Phase['status']) {
     await pb.collection('phases').update(p.id, { status });
   }
 
-  async function addTag(kind: 'lot' | 'theme', label: string) {
+  async function addTag(kind: 'lot' | 'theme' | 'local', label: string) {
     if (!label.trim()) return;
     await pb.collection('tags').create({ project: project.id, label: label.trim(), kind });
     reloadTags();
@@ -103,6 +104,37 @@ export default function ParamsPage() {
             onClick={() => {
               addTag('lot', newLot);
               setNewLot('');
+            }}
+          >
+            Ajouter
+          </button>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h3>Sujets de suivi — locaux / ouvrages</h3>
+        <p className="small muted">
+          Les invariants du projet : un local, un ouvrage, un équipement (« Hall d’entrée », « Local 2.014 »,
+          « Escalier aile B »…). En esquisse la description est sommaire, en APS elle s’étoffe, en APD tout est
+          reformulé — mais le sujet reste le même. Étiquetez remarques et décisions, puis consultez « Suivi par
+          sujet » pour voir toute l’histoire d’un sujet à travers les phases.
+        </p>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+          {tags
+            .filter((t) => t.kind === 'local')
+            .map((t) => (
+              <Badge key={t.id} color="#1c4d77">
+                {t.label}
+              </Badge>
+            ))}
+        </div>
+        <div className="form-row">
+          <input value={newLocal} onChange={(e) => setNewLocal(e.target.value)} placeholder="Hall d’entrée, Local 2.014, Escalier aile B…" />
+          <button
+            className="btn small"
+            onClick={() => {
+              addTag('local', newLocal);
+              setNewLocal('');
             }}
           >
             Ajouter

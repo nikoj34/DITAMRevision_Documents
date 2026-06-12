@@ -5,7 +5,7 @@ import { useSession } from '../../state/session';
 import { Avatar, Badge, Drawer, Field } from '../../components/ui';
 import { changeRemarkStatus } from './remarkApi';
 import { nextNumber } from '../../lib/hooks';
-import type { Doc, DocVersion, Remark, RemarkReply, RemarkStatus, ResponseKind } from '../../lib/types';
+import type { Doc, DocVersion, Remark, RemarkReply, RemarkStatus, ResponseKind, Tag } from '../../lib/types';
 import {
   CRITICITY_COLORS,
   CRITICITY_LABELS,
@@ -44,6 +44,11 @@ export default function RemarkDrawer({
     'remark_replies',
     { filter: `remark = "${remark.id}"`, sort: 'created', expand: 'author' },
     [remark.id]
+  );
+  const { items: sujets } = useList<Tag>(
+    'tags',
+    { filter: `project = "${remark.project}" && kind != "lot"`, sort: 'label' },
+    [remark.project]
   );
   const [replyText, setReplyText] = useState('');
   const [replyKind, setReplyKind] = useState<ResponseKind | ''>('');
@@ -93,6 +98,13 @@ export default function RemarkDrawer({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function toggleSujet(id: string) {
+    const cur = remark.themes || [];
+    const next = cur.includes(id) ? cur.filter((t) => t !== id) : [...cur, id];
+    await pb.collection('remarks').update(remark.id, { themes: next });
+    onChanged();
   }
 
   async function toDecision() {
@@ -201,6 +213,31 @@ export default function RemarkDrawer({
           {stripHtml(remark.body)}
         </div>
       </div>
+
+      {sujets.length > 0 && (
+        <>
+          <h4 className="small" style={{ textTransform: 'uppercase', color: 'var(--gris-500)' }}>
+            Sujets de suivi
+          </h4>
+          <p className="small muted">
+            Reliez la remarque à un local, un ouvrage ou un thème : le « Suivi par sujet » regroupe tout l’historique
+            entre phases, même quand les documents sont reformulés.
+          </p>
+          <div className="status-buttons">
+            {sujets.map((s) => (
+              <button
+                key={s.id}
+                className={`status-pill ${(remark.themes || []).includes(s.id) ? 'current' : ''}`}
+                style={{ '--sp-color': s.kind === 'local' ? '#1c4d77' : '#0e7d7d' } as React.CSSProperties}
+                onClick={() => toggleSujet(s.id)}
+                disabled={busy}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <h4 className="small" style={{ textTransform: 'uppercase', color: 'var(--gris-500)' }}>
         Changer le statut

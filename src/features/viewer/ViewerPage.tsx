@@ -48,11 +48,15 @@ export default function ViewerPage() {
     },
     [version?.id]
   );
-  const { items: lots } = useList<Tag>(
+  const { items: allTags } = useList<Tag>(
     'tags',
-    { filter: `project = "${project.id}" && kind = "lot"`, sort: 'label' },
+    { filter: `project = "${project.id}"`, sort: 'label' },
     [project.id]
   );
+  const lots = allTags.filter((t) => t.kind === 'lot');
+  // Sujets de suivi : thèmes transversaux et locaux/ouvrages — les invariants
+  // qui relient les remarques entre phases malgré la reformulation des textes.
+  const sujets = allTags.filter((t) => t.kind !== 'lot');
 
   const [pdf, setPdf] = useState<PdfDocument | null>(null);
   const [page, setPage] = useState(1);
@@ -340,6 +344,7 @@ export default function ViewerPage() {
         <NewRemarkModal
           pending={pending}
           lots={lots}
+          sujets={sujets}
           onClose={() => setPending(null)}
           onSave={async (data) => {
             await createRemark(
@@ -373,11 +378,13 @@ export default function ViewerPage() {
 function NewRemarkModal({
   pending,
   lots,
+  sujets,
   onClose,
   onSave,
 }: {
   pending: PendingAnchor;
   lots: Tag[];
+  sujets: Tag[];
   onClose: () => void;
   onSave: (data: {
     body: string;
@@ -386,6 +393,7 @@ function NewRemarkModal({
     lot?: string;
     text_ref?: string;
     due_date?: string;
+    themes?: string[];
   }) => Promise<void>;
 }) {
   const [body, setBody] = useState('');
@@ -394,7 +402,12 @@ function NewRemarkModal({
   const [lot, setLot] = useState('');
   const [textRef, setTextRef] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [selSujets, setSelSujets] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+
+  function toggleSujet(id: string) {
+    setSelSujets((cur) => (cur.includes(id) ? cur.filter((s) => s !== id) : [...cur, id]));
+  }
 
   async function save() {
     if (!body.trim()) return;
@@ -407,6 +420,7 @@ function NewRemarkModal({
         lot: lot || undefined,
         text_ref: textRef.trim() || undefined,
         due_date: dueDate ? new Date(dueDate).toISOString() : undefined,
+        themes: selSujets.length ? selSujets : undefined,
       });
     } finally {
       setBusy(false);
@@ -465,6 +479,23 @@ function NewRemarkModal({
           <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
         </Field>
       </div>
+      {sujets.length > 0 && (
+        <Field label="Sujets de suivi (local, ouvrage, thème — relie les remarques entre phases)">
+          <div className="status-buttons">
+            {sujets.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={`status-pill ${selSujets.includes(s.id) ? 'current' : ''}`}
+                style={{ '--sp-color': s.kind === 'local' ? '#1c4d77' : '#0e7d7d' } as React.CSSProperties}
+                onClick={() => toggleSujet(s.id)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
       <p className="small muted">Seul le texte est obligatoire — le reste peut être complété plus tard.</p>
       <div className="form-actions">
         <button className="btn secondary" onClick={onClose}>

@@ -8,6 +8,7 @@ import DocumentsPage from './features/documents/DocumentsPage';
 import ViewerPage from './features/viewer/ViewerPage';
 import RemarksPage from './features/remarques/RemarksPage';
 import DecisionsPage from './features/decisions/DecisionsPage';
+import SubjectsPage from './features/sujets/SubjectsPage';
 import ImportPage from './features/import/ImportPage';
 import ParamsPage from './features/params/ParamsPage';
 
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="documents/:docId" element={<ViewerPage />} />
         <Route path="remarques" element={<RemarksPage />} />
         <Route path="decisions" element={<DecisionsPage />} />
+        <Route path="sujets" element={<SubjectsPage />} />
         <Route path="import" element={<ImportPage />} />
         <Route path="parametres" element={<ParamsPage />} />
       </Route>
