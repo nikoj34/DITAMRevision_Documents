@@ -95,7 +95,7 @@ export default function RemarksPage() {
         sort: 'number',
         expand: 'source_phase,decided_by,source_remarks',
       });
-      exportRegister(filtered, decisions, { projectName: project.name, phases, lastReplies });
+      await exportRegister(filtered, decisions, { projectName: project.name, phases, lastReplies });
     } finally {
       setExporting(false);
     }

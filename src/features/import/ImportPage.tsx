@@ -12,6 +12,7 @@ import {
   normalizeResponseKind,
   normalizeStatus,
   parseRemarkNumber,
+  readNewRemarksSheet,
   readSheet,
   type SheetData,
 } from '../../lib/excel';
@@ -57,6 +58,7 @@ export default function ImportPage() {
 
   const [mode, setMode] = useState<ImportMode>('nouvelles');
   const [sheet, setSheet] = useState<SheetData | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState('');
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [targetVersion, setTargetVersion] = useState('');
@@ -79,6 +81,7 @@ export default function ImportPage() {
   async function onFile(f: File | null) {
     setReport(null);
     if (!f) return;
+    setFile(f);
     setFileName(f.name);
     const data = await readSheet(f);
     setSheet(data);
@@ -163,6 +166,37 @@ export default function ImportPage() {
         rejected.push({ line: i + 2, reason: e instanceof Error ? e.message : String(e) });
       }
     }
+
+    // Feuille dédiée « Nouvelles remarques (MOE) » de la fiche navette
+    // protégée : chaque ligne devient une remarque au nom de l'intervenant.
+    if (createNewRows && file) {
+      try {
+        const extra = await readNewRemarksSheet(file);
+        for (const row of extra || []) {
+          const body = String(row['Observation'] ?? '').trim();
+          if (!body) continue;
+          const number = await nextNumber('remarks', project.id);
+          const docInfo = String(row['Document'] ?? '').trim();
+          const pageRef = String(row['Page / repère'] ?? '').trim();
+          await pb.collection('remarks').create({
+            project: project.id,
+            number,
+            external_ref: String(row['Réf. MOE'] ?? '').trim(),
+            anchor_kind: 'reference_texte',
+            text_ref: [docInfo, pageRef].filter(Boolean).join(' / '),
+            body,
+            type: 'observation',
+            criticity: 'normale',
+            status: 'a_traiter',
+            author,
+          });
+          createdNew++;
+        }
+      } catch (e) {
+        rejected.push({ line: 0, reason: `Feuille « Nouvelles remarques » : ${e instanceof Error ? e.message : e}` });
+      }
+    }
+
     setReport({ created: updated, createdNew, skipped, rejected });
     setBusy(false);
   }

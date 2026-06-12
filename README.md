@@ -41,9 +41,13 @@ exploitants, secrétaire de séance) — voir [`docs/ATELIER.md`](docs/ATELIER.m
   écart accepté / non vérifiable), avec taux de conformité, remarques
   rattachées, import/export Excel du référentiel.
 - **Aller-retour MOE sans accès à l'application** (fiche navette) : export
-  du registre Excel → la MOE remplit les colonnes Réponse / Sens de la
-  réponse dans Excel → ré-import qui rattache chaque réponse à sa remarque
-  par son n°, met à jour les statuts et trace tout dans le fil signé.
+  du registre Excel **protégé** — le texte des observations est verrouillé,
+  l'insertion/suppression de lignes bloquée (mot de passe de protection :
+  `CIRAD`), seules les colonnes Réponse / Sens de la réponse (liste
+  déroulante) sont saisissables ; les ajouts de la MOE passent par la
+  feuille dédiée « Nouvelles remarques (MOE) ». Au ré-import : réponses
+  rattachées par n°, lignes nouvelles créées comme remarques « à traiter »,
+  **aucune clôture automatique** — répondre n'est pas corriger.
 - **Export Excel** conforme au tableau d'observations type des marchés
   publics (+ feuille registre des décisions), livrable tel quel en annexe de
   compte rendu. **Import Excel** tolérant avec assistant de correspondance

@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import type { Decision, Doc, DocVersion, Phase, Remark } from './types';
 import {
   CRITICITY_LABELS,
@@ -22,73 +23,172 @@ export interface ExportContext {
   lastReplies: Record<string, { body: string; date: string; author: string }>;
 }
 
-export function exportRegister(remarks: Remark[], decisions: Decision[], ctx: ExportContext) {
-  const phaseById = new Map(ctx.phases.map((p) => [p.id, p]));
+/** Nom de la feuille déprotégée réservée aux ajouts de la MOE. */
+export const NEW_REMARKS_SHEET = 'Nouvelles remarques (MOE)';
 
-  const obsRows = remarks.map((r) => {
+const RESPONSE_KIND_LIST = Object.values(RESPONSE_KIND_LABELS).join(',');
+
+/**
+ * Export « fiche navette » : la feuille Observations est PROTÉGÉE — le texte
+ * des remarques est verrouillé et l'insertion/suppression de lignes bloquée,
+ * pour qu'aucune ligne ne puisse être glissée ou reformulée discrètement.
+ * Seules les colonnes Réponse / Sens de la réponse sont saisissables.
+ * Les ajouts de la MOE passent par la feuille dédiée, déprotégée.
+ */
+export async function exportRegister(remarks: Remark[], decisions: Decision[], ctx: ExportContext) {
+  const phaseById = new Map(ctx.phases.map((p) => [p.id, p]));
+  const wb = new ExcelJS.Workbook();
+
+  // ── Feuille 1 : Observations (protégée) ──
+  const ws = wb.addWorksheet('Observations');
+  const columns: { header: string; width: number; editable?: boolean }[] = [
+    { header: 'N°', width: 9 },
+    { header: 'Réf. externe', width: 11 },
+    { header: 'Phase', width: 10 },
+    { header: 'Document', width: 32 },
+    { header: 'Indice', width: 7 },
+    { header: 'Page / repère', width: 16 },
+    { header: 'Lot / thème', width: 16 },
+    { header: 'Type', width: 20 },
+    { header: 'Criticité', width: 11 },
+    { header: 'Émetteur', width: 26 },
+    { header: 'Date', width: 11 },
+    { header: 'Observation', width: 60 },
+    { header: 'Réponse', width: 60, editable: true },
+    { header: 'Sens de la réponse', width: 22, editable: true },
+    { header: 'Assignée à', width: 18 },
+    { header: 'Échéance', width: 11 },
+    { header: 'Statut', width: 20 },
+    { header: 'Date de clôture', width: 12 },
+  ];
+  ws.columns = columns.map((c) => ({ header: c.header, width: c.width }));
+  const responseCol = columns.findIndex((c) => c.header === 'Réponse') + 1;
+  const kindCol = columns.findIndex((c) => c.header === 'Sens de la réponse') + 1;
+
+  for (const r of remarks) {
     const dv = r.expand?.document_version as (DocVersion & { expand?: { document?: Doc } }) | undefined;
     const doc = dv?.expand?.document;
     const phase = doc ? phaseById.get(doc.phase) : undefined;
     const reply = ctx.lastReplies[r.id];
-    return {
-      'N°': fmtRemarkNum(r.number),
-      'Réf. externe': r.external_ref || '',
-      'Phase': phase?.label || '',
-      'Document': doc ? `${doc.doc_code ? doc.doc_code + ' — ' : ''}${doc.title}` : '',
-      'Indice': dv?.index_label || '',
-      'Page / repère': [r.page ? `p.${r.page}` : '', r.text_ref].filter(Boolean).join(' / '),
-      'Lot / thème': r.expand?.lot?.label || '',
-      'Type': r.type ? REMARK_TYPE_LABELS[r.type] : '',
-      'Criticité': r.criticity ? CRITICITY_LABELS[r.criticity] : '',
-      'Émetteur': r.expand?.author
-        ? `${r.expand.author.display_name} (${r.expand.author.organization})`
-        : '',
-      'Date': fmtDate(r.created),
-      'Observation': stripHtml(r.body),
-      'Réponse': reply ? stripHtml(reply.body) : '',
-      'Date réponse': reply?.date || '',
-      'Sens de la réponse': r.response_kind ? RESPONSE_KIND_LABELS[r.response_kind] : '',
-      'Assignée à': r.expand?.assigned_to?.display_name || '',
-      'Échéance': fmtDate(r.due_date),
-      'Statut': REMARK_STATUS_LABELS[r.status],
-      'Date de clôture': fmtDate(r.closed_at),
+    ws.addRow([
+      fmtRemarkNum(r.number),
+      r.external_ref || '',
+      phase?.label || '',
+      doc ? `${doc.doc_code ? doc.doc_code + ' — ' : ''}${doc.title}` : '',
+      dv?.index_label || '',
+      [r.page ? `p.${r.page}` : '', r.text_ref].filter(Boolean).join(' / '),
+      r.expand?.lot?.label || '',
+      r.type ? REMARK_TYPE_LABELS[r.type] : '',
+      r.criticity ? CRITICITY_LABELS[r.criticity] : '',
+      r.expand?.author ? `${r.expand.author.display_name} (${r.expand.author.organization})` : '',
+      fmtDate(r.created),
+      stripHtml(r.body),
+      reply ? stripHtml(reply.body) : '',
+      r.response_kind ? RESPONSE_KIND_LABELS[r.response_kind] : '',
+      r.expand?.assigned_to?.display_name || '',
+      fmtDate(r.due_date),
+      REMARK_STATUS_LABELS[r.status],
+      fmtDate(r.closed_at),
+    ]);
+  }
+
+  // Mise en forme : en-tête, retours à la ligne, colonnes saisissables
+  ws.getRow(1).font = { bold: true };
+  ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEAF5' } };
+  ws.views = [{ state: 'frozen', ySplit: 1 }];
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: columns.length } };
+  for (let i = 2; i <= remarks.length + 1; i++) {
+    ws.getCell(i, 12).alignment = { wrapText: true, vertical: 'top' };
+    for (const col of [responseCol, kindCol]) {
+      const cell = ws.getCell(i, col);
+      cell.protection = { locked: false };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF6DC' } };
+      cell.alignment = { wrapText: true, vertical: 'top' };
+    }
+    ws.getCell(i, kindCol).dataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: [`"${RESPONSE_KIND_LIST}"`],
     };
+  }
+  // Protection : tout est verrouillé sauf les cellules ci-dessus ;
+  // insertion et suppression de lignes interdites.
+  await ws.protect('CIRAD', {
+    selectLockedCells: true,
+    selectUnlockedCells: true,
+    formatColumns: true,
+    formatRows: true,
+    sort: false,
+    autoFilter: true,
+    insertRows: false,
+    deleteRows: false,
+    insertColumns: false,
+    deleteColumns: false,
   });
 
-  const decRows = decisions.map((d) => ({
-    'N°': fmtDecisionNum(d.number),
-    'Intitulé': d.title,
-    'Détail': stripHtml(d.body),
-    'Statut': DECISION_STATUS_LABELS[d.status],
-    'Phase d’origine': d.expand?.source_phase?.label || '',
-    'Décideur': d.expand?.decided_by?.display_name || '',
-    'Date décision': fmtDate(d.decided_at),
-    'Référence CR / arbitrage': d.meeting_ref || '',
-    'Impact coût (€)': d.cost_impact || '',
-    'Impact surface (m²)': d.surface_impact || '',
-    'Remarques liées': (d.expand?.source_remarks || []).map((r) => fmtRemarkNum(r.number)).join(', '),
-    'Vérifications par phase': (d.verifications || [])
-      .map((v) => `${v.phase_label}: ${v.result}${v.note ? ` (${v.note})` : ''}`)
-      .join(' ; '),
-  }));
+  // ── Feuille 2 : Nouvelles remarques (déprotégée) ──
+  const wsNew = wb.addWorksheet(NEW_REMARKS_SHEET);
+  wsNew.columns = [
+    { header: 'Réf. MOE', width: 12 },
+    { header: 'Document', width: 32 },
+    { header: 'Page / repère', width: 18 },
+    { header: 'Observation', width: 80 },
+  ];
+  wsNew.getRow(1).font = { bold: true };
+  wsNew.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEAF5' } };
+  wsNew.insertRow(1, [
+    'Ajoutez ici vos remarques nouvelles (une par ligne). Ne modifiez pas la feuille « Observations » en dehors des colonnes Réponse / Sens de la réponse.',
+  ]);
+  wsNew.getRow(1).font = { italic: true, color: { argb: 'FF6B7681' } };
 
-  const wb = XLSX.utils.book_new();
-  const wsObs = XLSX.utils.json_to_sheet(obsRows);
-  wsObs['!cols'] = [
-    { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 32 }, { wch: 7 }, { wch: 16 },
-    { wch: 16 }, { wch: 20 }, { wch: 10 }, { wch: 26 }, { wch: 10 }, { wch: 60 },
-    { wch: 60 }, { wch: 12 }, { wch: 20 }, { wch: 18 }, { wch: 10 }, { wch: 20 }, { wch: 12 },
+  // ── Feuille 3 : Registre des décisions (protégée, lecture seule) ──
+  const wsDec = wb.addWorksheet('Registre des décisions');
+  wsDec.columns = [
+    { header: 'N°', width: 8 },
+    { header: 'Intitulé', width: 40 },
+    { header: 'Détail', width: 60 },
+    { header: 'Statut', width: 12 },
+    { header: 'Phase d’origine', width: 14 },
+    { header: 'Décideur', width: 22 },
+    { header: 'Date décision', width: 12 },
+    { header: 'Référence CR / arbitrage', width: 24 },
+    { header: 'Impact coût (€)', width: 12 },
+    { header: 'Impact surface (m²)', width: 14 },
+    { header: 'Remarques liées', width: 20 },
+    { header: 'Vérifications par phase', width: 50 },
   ];
-  XLSX.utils.book_append_sheet(wb, wsObs, 'Observations');
-  const wsDec = XLSX.utils.json_to_sheet(decRows);
-  wsDec['!cols'] = [
-    { wch: 7 }, { wch: 40 }, { wch: 60 }, { wch: 12 }, { wch: 14 }, { wch: 22 },
-    { wch: 12 }, { wch: 24 }, { wch: 12 }, { wch: 14 }, { wch: 20 }, { wch: 50 },
-  ];
-  XLSX.utils.book_append_sheet(wb, wsDec, 'Registre des décisions');
+  wsDec.getRow(1).font = { bold: true };
+  wsDec.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEAF5' } };
+  for (const d of decisions) {
+    wsDec.addRow([
+      fmtDecisionNum(d.number),
+      d.title,
+      stripHtml(d.body),
+      DECISION_STATUS_LABELS[d.status],
+      d.expand?.source_phase?.label || '',
+      d.expand?.decided_by?.display_name || '',
+      fmtDate(d.decided_at),
+      d.meeting_ref || '',
+      d.cost_impact || '',
+      d.surface_impact || '',
+      (d.expand?.source_remarks || []).map((r) => fmtRemarkNum(r.number)).join(', '),
+      (d.verifications || [])
+        .map((v) => `${v.phase_label}: ${v.result}${v.note ? ` (${v.note})` : ''}`)
+        .join(' ; '),
+    ]);
+  }
+  await wsDec.protect('CIRAD', { selectLockedCells: true, selectUnlockedCells: true, autoFilter: true });
 
   const today = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(wb, `Observations_${slug(ctx.projectName)}_${today}.xlsx`);
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `Observations_${slug(ctx.projectName)}_${today}.xlsx`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
 
 function stripHtml(html: string): string {
@@ -123,6 +223,20 @@ export async function readSheet(file: File, sheetName?: string): Promise<SheetDa
     ? Object.keys(rows[0])
     : (XLSX.utils.sheet_to_json<string[]>(ws, { header: 1 })[0] as string[] | undefined) || [];
   return { sheetNames: wb.SheetNames, headers, rows };
+}
+
+/**
+ * Lit la feuille « Nouvelles remarques (MOE) » d'une fiche navette retournée
+ * (null si absente). La ligne 1 est une consigne, les en-têtes sont en ligne 2.
+ */
+export async function readNewRemarksSheet(file: File): Promise<Record<string, unknown>[] | null> {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { cellDates: true });
+  if (!wb.SheetNames.includes(NEW_REMARKS_SHEET)) return null;
+  return XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[NEW_REMARKS_SHEET], {
+    defval: '',
+    range: 1,
+  });
 }
 
 /** Champs cibles proposés dans l'assistant de correspondance des colonnes. */
