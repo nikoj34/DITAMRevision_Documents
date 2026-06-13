@@ -16,6 +16,7 @@ import {
   fmtDate,
   fmtRemarkNum,
   isOverdue,
+  plainText,
 } from '../../lib/types';
 import type { ProjectContext } from '../layout/ProjectLayout';
 
@@ -66,7 +67,7 @@ export default function RemarksPage() {
       if (author && r.author !== author) return false;
       if (onlyOverdue && !isOverdue(r)) return false;
       if (q) {
-        const hay = `${stripHtml(r.body)} ${r.text_ref} ${r.external_ref} ${fmtRemarkNum(r.number)} ${
+        const hay = `${plainText(r.body)} ${r.text_ref} ${r.external_ref} ${fmtRemarkNum(r.number)} ${
           dv?.expand?.document?.title || ''
         } ${r.expand?.author?.display_name || ''}`
           .normalize('NFD')
@@ -203,7 +204,7 @@ export default function RemarksPage() {
                     <b>{fmtRemarkNum(r.number)}</b>
                     {r.external_ref && <div className="small muted">{r.external_ref}</div>}
                   </td>
-                  <td style={{ maxWidth: 380 }}>{stripHtml(r.body).slice(0, 140)}</td>
+                  <td style={{ maxWidth: 380 }}>{plainText(r.body).slice(0, 140)}</td>
                   <td>
                     {docRec ? (
                       <a
@@ -253,8 +254,3 @@ export default function RemarksPage() {
   );
 }
 
-function stripHtml(html: string): string {
-  const el = document.createElement('div');
-  el.innerHTML = html || '';
-  return (el.textContent || '').trim();
-}

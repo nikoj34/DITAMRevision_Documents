@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { pb } from '../../lib/pb';
-import { nextNumber, useList } from '../../lib/hooks';
+import { createNumbered, useList } from '../../lib/hooks';
 import { useSession } from '../../state/session';
 import { Badge, Drawer, EmptyState, Field, Modal } from '../../components/ui';
 import { exportDecisions } from '../../lib/excel';
@@ -12,6 +12,7 @@ import {
   fmtDate,
   fmtDecisionNum,
   fmtRemarkNum,
+  plainText,
 } from '../../lib/types';
 import type { ProjectContext } from '../layout/ProjectLayout';
 
@@ -171,10 +172,7 @@ function DecisionForm({
     if (!title.trim()) return;
     setBusy(true);
     try {
-      const number = await nextNumber('decisions', projectId);
-      await pb.collection('decisions').create({
-        project: projectId,
-        number,
+      await createNumbered('decisions', projectId, {
         title: title.trim(),
         body: body.trim(),
         status,
@@ -342,7 +340,7 @@ function DecisionDrawer({
       onClose={onClose}
     >
       <h4>{decision.title}</h4>
-      {decision.body && <p style={{ whiteSpace: 'pre-wrap' }}>{stripHtml(decision.body)}</p>}
+      {decision.body && <p style={{ whiteSpace: 'pre-wrap' }}>{plainText(decision.body)}</p>}
       <dl className="meta-grid">
         <dt>Phase d’origine</dt>
         <dd>{decision.expand?.source_phase?.label || '—'}</dd>
@@ -465,8 +463,3 @@ function DecisionDrawer({
   );
 }
 
-function stripHtml(html: string): string {
-  const el = document.createElement('div');
-  el.innerHTML = html || '';
-  return (el.textContent || '').trim();
-}

@@ -10,19 +10,20 @@ import {
   fmtDate,
   fmtDecisionNum,
   fmtRemarkNum,
+  plainText,
 } from './types';
 
 /** Export simple du registre des décisions (usage interne / annexe CR). */
 export function exportDecisions(decisions: Decision[], projectName: string) {
   const rows = decisions.map((d) => ({
     'N°': fmtDecisionNum(d.number),
-    'Intitulé': d.title,
-    'Détail': stripHtml(d.body),
+    'Intitulé': cell(d.title),
+    'Détail': cell(d.body),
     'Statut': DECISION_STATUS_LABELS[d.status],
-    'Phase d’origine': d.expand?.source_phase?.label || '',
-    'Décideur': d.expand?.decided_by?.display_name || '',
+    'Phase d’origine': cell(d.expand?.source_phase?.label),
+    'Décideur': cell(d.expand?.decided_by?.display_name),
     'Date décision': fmtDate(d.decided_at),
-    'Référence CR / arbitrage': d.meeting_ref || '',
+    'Référence CR / arbitrage': cell(d.meeting_ref),
     'Impact coût (€)': d.cost_impact || '',
     'Impact surface (m²)': d.surface_impact || '',
     'Remarques liées': (d.expand?.source_remarks || []).map((r) => fmtRemarkNum(r.number)).join(', '),
@@ -102,20 +103,20 @@ export async function exportRegister(remarks: Remark[], ctx: ExportContext) {
     const reply = ctx.lastReplies[r.id];
     ws.addRow([
       fmtRemarkNum(r.number),
-      r.external_ref || '',
+      cell(r.external_ref),
       phase?.label || '',
-      doc ? `${doc.doc_code ? doc.doc_code + ' — ' : ''}${doc.title}` : '',
-      dv?.index_label || '',
-      [r.page ? `p.${r.page}` : '', r.text_ref].filter(Boolean).join(' / '),
-      r.expand?.lot?.label || '',
+      cell(doc ? `${doc.doc_code ? doc.doc_code + ' — ' : ''}${doc.title}` : ''),
+      cell(dv?.index_label),
+      cell([r.page ? `p.${r.page}` : '', r.text_ref].filter(Boolean).join(' / ')),
+      cell(r.expand?.lot?.label),
       r.type ? REMARK_TYPE_LABELS[r.type] : '',
       r.criticity ? CRITICITY_LABELS[r.criticity] : '',
-      r.expand?.author ? `${r.expand.author.display_name} (${r.expand.author.organization})` : '',
+      cell(r.expand?.author ? `${r.expand.author.display_name} (${r.expand.author.organization})` : ''),
       fmtDate(r.created),
-      stripHtml(r.body),
-      reply ? stripHtml(reply.body) : '',
+      cell(r.body),
+      reply ? cell(reply.body) : '',
       r.response_kind ? RESPONSE_KIND_LABELS[r.response_kind] : '',
-      reply?.author || '',
+      cell(reply?.author),
       '',
       fmtDate(r.due_date),
       REMARK_STATUS_LABELS[r.status],
@@ -194,10 +195,14 @@ export async function exportRegister(remarks: Remark[], ctx: ExportContext) {
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
 
-function stripHtml(html: string): string {
-  const el = document.createElement('div');
-  el.innerHTML = html || '';
-  return (el.textContent || '').trim();
+// Texte de cellule pour export : texte brut sûr + neutralisation d'une
+// éventuelle injection de formule (cellule commençant par = + - @ ou
+// tabulation/retour chariot), au cas où le fichier serait ré-enregistré en
+// CSV ou ouvert par un tableur permissif. On préfixe une apostrophe (marqueur
+// « texte » reconnu, recommandation OWASP).
+export function cell(s: string | null | undefined): string {
+  const t = plainText(s);
+  return /^[=+\-@\t\r]/.test(t) ? `'${t}` : t;
 }
 
 function slug(s: string): string {

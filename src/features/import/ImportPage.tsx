@@ -16,7 +16,7 @@ import {
   readSheet,
   type SheetData,
 } from '../../lib/excel';
-import { nextNumber } from '../../lib/hooks';
+import { createNumbered } from '../../lib/hooks';
 import type { Doc, DocVersion, Remark, Stakeholder, Tag } from '../../lib/types';
 import { ROLE_LABELS, fmtRemarkNum } from '../../lib/types';
 import type { ProjectContext } from '../layout/ProjectLayout';
@@ -191,11 +191,8 @@ export default function ImportPage() {
             continue;
           }
           // Ligne ajoutée par la MOE : nouvelle remarque à son nom.
-          const number = await nextNumber('remarks', project.id);
           const author = await authorFor(get('respondent_name'));
-          await pb.collection('remarks').create({
-            project: project.id,
-            number,
+          await createNumbered('remarks', project.id, {
             external_ref: rawNum,
             anchor_kind: 'reference_texte',
             text_ref: get('text_ref'),
@@ -251,12 +248,9 @@ export default function ImportPage() {
               lotId = createdTag.id;
             }
           }
-          const number = await nextNumber('remarks', project.id);
           const docInfo = String(row['Document'] ?? '').trim();
           const pageRef = String(row['Page / repère'] ?? '').trim();
-          await pb.collection('remarks').create({
-            project: project.id,
-            number,
+          await createNumbered('remarks', project.id, {
             external_ref: extRef,
             anchor_kind: 'reference_texte',
             text_ref: [docInfo, pageRef].filter(Boolean).join(' / '),
@@ -317,12 +311,9 @@ export default function ImportPage() {
         continue;
       }
       try {
-        const number = await nextNumber('remarks', project.id);
         const authorId = await findOrCreatePerson(get('author_name'));
         const lotId = await findOrCreateLot(get('lot_label'));
-        const remark = await pb.collection('remarks').create({
-          project: project.id,
-          number,
+        const remark = await createNumbered<Remark>('remarks', project.id, {
           external_ref: get('external_ref'),
           document_version: targetVersion || null,
           anchor_kind: 'reference_texte',

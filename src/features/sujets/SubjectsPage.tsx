@@ -12,6 +12,7 @@ import {
   fmtDate,
   fmtDecisionNum,
   fmtRemarkNum,
+  plainText,
 } from '../../lib/types';
 import type { ProjectContext } from '../layout/ProjectLayout';
 
@@ -167,7 +168,7 @@ export default function SubjectsPage() {
                         <span>{fmtDate(r.created)}</span>
                         <Badge color={REMARK_STATUS_COLORS[r.status]}>{REMARK_STATUS_LABELS[r.status]}</Badge>
                       </div>
-                      <div className="rc-body">{stripHtml(r.body).slice(0, 220)}</div>
+                      <div className="rc-body">{plainText(r.body).slice(0, 220)}</div>
                       <div className="rc-head" style={{ marginTop: 4 }}>
                         {r.expand?.author?.display_name}
                       </div>
@@ -190,8 +191,3 @@ export default function SubjectsPage() {
   );
 }
 
-function stripHtml(html: string): string {
-  const el = document.createElement('div');
-  el.innerHTML = html || '';
-  return (el.textContent || '').trim();
-}

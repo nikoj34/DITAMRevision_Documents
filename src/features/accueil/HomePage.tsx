@@ -11,6 +11,7 @@ import {
   fmtDate,
   fmtRemarkNum,
   isOverdue,
+  plainText,
 } from '../../lib/types';
 import type { ProjectContext } from '../layout/ProjectLayout';
 
@@ -173,7 +174,7 @@ export default function HomePage() {
                   <b>{fmtRemarkNum(r.number)}</b>
                   <Badge color={REMARK_STATUS_COLORS[r.status]}>{REMARK_STATUS_LABELS[r.status]}</Badge>
                 </div>
-                <div className="rc-body small">{strip(r.body).slice(0, 110)}</div>
+                <div className="rc-body small">{plainText(r.body).slice(0, 110)}</div>
               </div>
             ))}
             <p className="small">
@@ -193,8 +194,3 @@ export default function HomePage() {
   );
 }
 
-function strip(html: string): string {
-  const el = document.createElement('div');
-  el.innerHTML = html || '';
-  return (el.textContent || '').trim();
-}

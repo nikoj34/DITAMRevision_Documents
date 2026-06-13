@@ -1,5 +1,5 @@
 import { pb } from '../../lib/pb';
-import { nextNumber } from '../../lib/hooks';
+import { createNumbered } from '../../lib/hooks';
 import type { Remark, RemarkStatus, Stakeholder } from '../../lib/types';
 import { OPEN_STATUSES, REMARK_STATUS_LABELS } from '../../lib/types';
 
@@ -23,14 +23,13 @@ export interface NewRemarkInput {
 }
 
 export async function createRemark(input: NewRemarkInput, author: Stakeholder): Promise<Remark> {
-  const number = await nextNumber('remarks', input.project);
-  return pb.collection('remarks').create<Remark>({
+  const { project, ...rest } = input;
+  return createNumbered<Remark>('remarks', project, {
     status: 'a_traiter',
     type: 'observation',
     criticity: 'normale',
     anchor_kind: 'document_entier',
-    ...input,
-    number,
+    ...rest,
     author: author.id,
   });
 }
@@ -72,10 +71,7 @@ export async function carryOverRemarks(
     filter: `document_version = "${oldVersionId}" && (${OPEN_STATUSES.map((s) => `status = "${s}"`).join(' || ')})`,
   });
   for (const r of open) {
-    const number = await nextNumber('remarks', r.project);
-    const copy = await pb.collection('remarks').create<Remark>({
-      project: r.project,
-      number,
+    const copy = await createNumbered<Remark>('remarks', r.project, {
       external_ref: r.external_ref,
       document_version: newVersionId,
       anchor_kind: r.anchor_kind,

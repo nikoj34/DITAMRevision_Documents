@@ -136,7 +136,9 @@ export interface RemarkReply extends BaseRecord {
   expand?: { author?: Stakeholder };
 }
 
-export type DecisionStatus = 'a_arbitrer' | 'actee' | 'modifiee' | 'reportee' | 'abandonnee';export interface DecisionVerification {
+export type DecisionStatus = 'a_arbitrer' | 'actee' | 'modifiee' | 'reportee' | 'abandonnee';
+
+export interface DecisionVerification {
   phase: string;
   phase_label: string;
   result: 'conforme' | 'non_conforme' | 'non_verifiable';
@@ -416,3 +418,21 @@ export const REQ_VERIF_ICONS: Record<RequirementVerifResult, string> = {
   ecart_accepte: '⚖️',
   non_verifiable: '⏳',
 };
+
+/**
+ * Convertit un contenu (texte ou HTML résiduel) en texte brut SANS exécuter
+ * de code : DOMParser ne déclenche ni script ni chargement de ressource sur
+ * un document détaché (contrairement à innerHTML). Les contenus de remarques
+ * sont déjà du texte saisi en <textarea>, ceci est une protection en
+ * profondeur — le rendu se fait ensuite via React qui échappe le texte.
+ */
+export function plainText(s: string | null | undefined): string {
+  const raw = s ?? '';
+  if (!raw.includes('<') && !raw.includes('&')) return raw.trim();
+  try {
+    const doc = new DOMParser().parseFromString(raw, 'text/html');
+    return (doc.body.textContent || '').trim();
+  } catch {
+    return raw.replace(/<[^>]*>/g, '').trim();
+  }
+}

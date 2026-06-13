@@ -4,7 +4,7 @@ import { useList } from '../../lib/hooks';
 import { useSession } from '../../state/session';
 import { Avatar, Badge, Drawer, Field } from '../../components/ui';
 import { changeRemarkStatus } from './remarkApi';
-import { nextNumber } from '../../lib/hooks';
+import { createNumbered } from '../../lib/hooks';
 import type { Doc, DocVersion, Remark, RemarkReply, RemarkStatus, Requirement, ResponseKind, Tag } from '../../lib/types';
 import {
   CRITICITY_COLORS,
@@ -18,6 +18,7 @@ import {
   fmtDate,
   fmtRemarkNum,
   isOverdue,
+  plainText,
 } from '../../lib/types';
 
 const STATUS_FLOW: RemarkStatus[] = [
@@ -124,11 +125,8 @@ export default function RemarkDrawer({
   async function toDecision() {
     setBusy(true);
     try {
-      const number = await nextNumber('decisions', remark.project);
-      const title = stripHtml(remark.body).slice(0, 120);
-      await pb.collection('decisions').create({
-        project: remark.project,
-        number,
+      const title = plainText(remark.body).slice(0, 120);
+      await createNumbered('decisions', remark.project, {
         title,
         body: remark.body,
         status: 'a_arbitrer',
@@ -224,7 +222,7 @@ export default function RemarkDrawer({
 
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="rc-body" style={{ whiteSpace: 'pre-wrap' }}>
-          {stripHtml(remark.body)}
+          {plainText(remark.body)}
         </div>
       </div>
 
@@ -341,7 +339,7 @@ export default function RemarkDrawer({
                 <div className="tb-meta">
                   {a ? `${a.display_name} — ${ROLE_LABELS[a.role]}` : '?'} · {fmtDate(rep.created)}
                 </div>
-                <div style={{ whiteSpace: 'pre-wrap' }}>{stripHtml(rep.body)}</div>
+                <div style={{ whiteSpace: 'pre-wrap' }}>{plainText(rep.body)}</div>
               </div>
             </div>
           );
@@ -373,8 +371,3 @@ export default function RemarkDrawer({
   );
 }
 
-function stripHtml(html: string): string {
-  const el = document.createElement('div');
-  el.innerHTML = html || '';
-  return (el.textContent || '').trim();
-}

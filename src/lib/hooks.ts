@@ -87,3 +87,31 @@ export async function nextNumber(collection: 'remarks' | 'decisions', projectId:
   const max = res.items.length ? (res.items[0] as unknown as { number: number }).number : 0;
   return max + 1;
 }
+
+/**
+ * Crée un enregistrement numéroté (remarque/décision) de façon sûre en
+ * multi-utilisateur : un index unique (project, number) existe en base, donc
+ * une collision provoque une erreur que l'on rejoue avec le numéro suivant.
+ * Sans ce garde-fou, deux créations simultanées prendraient le même numéro.
+ */
+export async function createNumbered<T>(
+  collection: 'remarks' | 'decisions',
+  projectId: string,
+  payload: Record<string, unknown>,
+  attempts = 6
+): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    const number = await nextNumber(collection, projectId);
+    try {
+      return await pb.collection(collection).create<T>({ ...payload, project: projectId, number });
+    } catch (e) {
+      lastErr = e;
+      const data = (e as { response?: { data?: Record<string, unknown> } })?.response?.data;
+      // On ne rejoue que sur conflit de numéro (index unique) ; toute autre
+      // erreur (validation…) est remontée immédiatement.
+      if (!data || !('number' in data)) throw e;
+    }
+  }
+  throw lastErr;
+}

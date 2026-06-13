@@ -147,8 +147,18 @@ src/
     decisions/       Registre des décisions, vérifications par phase
     import/          Assistant d'import Excel
     params/          Phases, lots, thèmes
-docs/ATELIER.md      Synthèse de l'atelier de conception
+docs/ATELIER.md      Synthèse des ateliers de conception et de revue
+SECURITE.md          Modèle de menace, protections, déploiement sécurisé
 ```
+
+## Sécurité
+
+Voir [`SECURITE.md`](SECURITE.md) : neutralisation des formules Excel à
+l'export, anti-XSS, index unique anti-collision de numéros, validation
+serveur des champs, suppression réservée à l'admin, restriction des types de
+fichiers — et la configuration réseau **à appliquer au déploiement** (l'app
+étant sans mot de passe, l'isolation sur le réseau CIRAD est le contrôle
+principal). Une batterie de tests automatisés couvre ces points.
 
 ## Pistes V2 (issues de l'atelier)
 

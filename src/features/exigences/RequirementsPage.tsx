@@ -5,7 +5,7 @@ import { pb } from '../../lib/pb';
 import { useList } from '../../lib/hooks';
 import { useSession } from '../../state/session';
 import { Badge, Drawer, EmptyState, Field, Modal } from '../../components/ui';
-import { readSheet, type SheetData } from '../../lib/excel';
+import { cell, readSheet, type SheetData } from '../../lib/excel';
 import RemarkDrawer from '../remarques/RemarkDrawer';
 import type {
   Remark,
@@ -26,6 +26,7 @@ import {
   REQ_VERIF_LABELS,
   fmtDate,
   fmtRemarkNum,
+  plainText,
 } from '../../lib/types';
 import type { ProjectContext } from '../layout/ProjectLayout';
 
@@ -112,13 +113,13 @@ export default function RequirementsPage() {
   function exportExcel() {
     const rows = requirements.map((r) => {
       const row: Record<string, unknown> = {
-        'Code': r.code,
-        'Exigence': r.label,
-        'Description': r.description,
-        'Valeur cible': r.target_value,
-        'Origine': r.origin || '',
-        'Source': r.source_ref,
-        'Sujets': (r.expand?.themes || []).map((t) => t.label).join(', '),
+        'Code': cell(r.code),
+        'Exigence': cell(r.label),
+        'Description': cell(r.description),
+        'Valeur cible': cell(r.target_value),
+        'Origine': cell(r.origin),
+        'Source': cell(r.source_ref),
+        'Sujets': cell((r.expand?.themes || []).map((t) => t.label).join(', ')),
         'Statut': REQUIREMENT_STATUS_LABELS[r.status] || r.status,
         'Remarques liées': remarks
           .filter((m) => (m.requirements || []).includes(r.id))
@@ -755,15 +756,10 @@ function RequirementDrawer({
             <b>{fmtRemarkNum(r.number)}</b>
             <Badge color={REMARK_STATUS_COLORS[r.status]}>{REMARK_STATUS_LABELS[r.status]}</Badge>
           </div>
-          <div className="rc-body small">{stripHtml(r.body).slice(0, 120)}</div>
+          <div className="rc-body small">{plainText(r.body).slice(0, 120)}</div>
         </div>
       ))}
     </Drawer>
   );
 }
 
-function stripHtml(html: string): string {
-  const el = document.createElement('div');
-  el.innerHTML = html || '';
-  return (el.textContent || '').trim();
-}

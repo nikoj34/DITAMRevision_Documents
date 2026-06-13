@@ -16,6 +16,7 @@ import {
   REMARK_STATUS_LABELS,
   REMARK_TYPE_LABELS,
   fmtRemarkNum,
+  plainText,
 } from '../../lib/types';
 import type { ProjectContext } from '../layout/ProjectLayout';
 
@@ -359,7 +360,7 @@ export default function ViewerPage() {
                 {r.page ? <span>p.{r.page}</span> : null}
                 <Badge color={REMARK_STATUS_COLORS[r.status]}>{REMARK_STATUS_LABELS[r.status]}</Badge>
               </div>
-              <div className="rc-body">{stripHtml(r.body).slice(0, 160)}</div>
+              <div className="rc-body">{plainText(r.body).slice(0, 160)}</div>
               <div className="rc-head" style={{ marginTop: 4 }}>
                 {r.expand?.author?.display_name}
                 {r.expand?.lot && <span>· {r.expand.lot.label}</span>}
@@ -655,8 +656,3 @@ function NewRemarkModal({
   );
 }
 
-function stripHtml(html: string): string {
-  const el = document.createElement('div');
-  el.innerHTML = html || '';
-  return (el.textContent || '').trim();
-}

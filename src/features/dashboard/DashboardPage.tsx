@@ -12,6 +12,7 @@ import {
   fmtDecisionNum,
   fmtRemarkNum,
   isOverdue,
+  plainText,
 } from '../../lib/types';
 import type { ProjectContext } from '../layout/ProjectLayout';
 
@@ -157,7 +158,7 @@ export default function DashboardPage() {
                 <span>échéance {fmtDate(r.due_date)}</span>
                 <Badge color={REMARK_STATUS_COLORS[r.status]}>{REMARK_STATUS_LABELS[r.status]}</Badge>
               </div>
-              <div className="rc-body small">{strip(r.body).slice(0, 90)}</div>
+              <div className="rc-body small">{plainText(r.body).slice(0, 90)}</div>
             </div>
           ))}
         </div>
@@ -179,8 +180,3 @@ function sum(rec: Record<string, number>): number {
   return Object.values(rec).reduce((a, b) => a + b, 0);
 }
 
-function strip(html: string): string {
-  const el = document.createElement('div');
-  el.innerHTML = html || '';
-  return (el.textContent || '').trim();
-}
